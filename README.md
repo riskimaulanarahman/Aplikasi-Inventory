@@ -47,6 +47,15 @@ Aplikasi manajemen stok untuk gudang pusat dan outlet, dengan fokus pada alur op
   - Input stok fisik per lokasi (pusat/outlet).
   - Hitung selisih otomatis terhadap stok sistem.
   - Catat event opname ke riwayat.
+- Analitik Stok:
+  - Laporan data barang per produk (stok pusat, total stok outlet, total gabungan).
+  - Filter lokasi: semua lokasi, pusat, atau outlet tertentu.
+  - Tren pergerakan stok dengan periode preset: `30 Hari`, `Bulanan (12 bulan)`, `Tahunan (5 tahun)`.
+  - Visual chart animatif yang mobile-friendly + tabel ringkasan aksesibel.
+- Ekspor Data:
+  - Ekspor snapshot stok ke format Excel (`.xlsx`).
+  - Filter lokasi: semua lokasi, pusat, atau outlet tertentu.
+  - Sheet tunggal `Stok Snapshot` dengan kolom tanggal export, lokasi, produk, SKU, kategori, dan qty.
 
 ### 5) UX & UI
 - Responsive layout desktop/mobile.
@@ -59,6 +68,8 @@ Aplikasi manajemen stok untuk gudang pusat dan outlet, dengan fokus pada alur op
 - Reload halaman akan mengembalikan data ke kondisi awal.
 - Belum ada backend, autentikasi, atau sinkronisasi database.
 - Belum ada fitur harga produk (hanya fokus kuantitas stok).
+- Ekspor saat ini masih fokus snapshot stok (belum termasuk riwayat transfer/movement multi-sheet).
+- Custom date range untuk analitik belum tersedia di versi ini (masuk backlog fase berikutnya).
 
 ## Teknologi
 - Next.js `14.2.5`
