@@ -6,12 +6,11 @@ export type PageTone = 'sky' | 'teal' | 'red' | 'orange' | 'violet';
 export type MoreTab =
   | 'history'
   | 'master'
-  | 'outlets'
   | 'transfer'
   | 'opname'
   | 'analytics'
   | 'export';
-export type MasterTab = 'products' | 'categories' | 'units';
+export type MasterTab = 'products' | 'categories' | 'units' | 'outlets';
 export type HistoryFilter = 'all' | MovementType;
 export type ToastTone = 'success' | 'error';
 export type PageSize = 5 | 10 | 20;

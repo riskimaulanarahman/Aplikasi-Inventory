@@ -698,7 +698,6 @@ export function MoreContent({
 	const tabs: { key: MoreTab; label: string }[] = [
 		{ key: 'history', label: 'Riwayat' },
 		{ key: 'master', label: 'Master' },
-		{ key: 'outlets', label: 'Outlet' },
 		{ key: 'transfer', label: 'Transfer' },
 		{ key: 'opname', label: 'Opname' },
 		{ key: 'analytics', label: 'Analitik' },
@@ -781,17 +780,11 @@ export function MoreContent({
 					onCreateUnit={onCreateUnit}
 					onUpdateUnit={onUpdateUnit}
 					onDeleteUnit={onDeleteUnit}
-				/>
-			) : null}
-
-			{activeTab === 'outlets' ? (
-				<OutletManager
 					outlets={outlets}
 					outletStocks={outletStocks}
-					products={products}
-					onCreate={onCreateOutlet}
-					onUpdate={onUpdateOutlet}
-					onDelete={onDeleteOutlet}
+					onCreateOutlet={onCreateOutlet}
+					onUpdateOutlet={onUpdateOutlet}
+					onDeleteOutlet={onDeleteOutlet}
 				/>
 			) : null}
 
@@ -874,6 +867,11 @@ export function MasterModule({
 	onCreateUnit,
 	onUpdateUnit,
 	onDeleteUnit,
+	outlets,
+	outletStocks,
+	onCreateOutlet,
+	onUpdateOutlet,
+	onDeleteOutlet,
 }: {
 	activeTab: MasterTab;
 	onChangeTab: (tab: MasterTab) => void;
@@ -907,11 +905,30 @@ export function MasterModule({
 	onCreateUnit: (payload: { name: string }) => boolean;
 	onUpdateUnit: (payload: { unitId: string; name: string }) => boolean;
 	onDeleteUnit: (unitId: string) => boolean;
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
+	onCreateOutlet: (payload: {
+		name: string;
+		code: string;
+		address: string;
+		latitude: number;
+		longitude: number;
+	}) => boolean;
+	onUpdateOutlet: (payload: {
+		outletId: string;
+		name: string;
+		code: string;
+		address: string;
+		latitude: number;
+		longitude: number;
+	}) => boolean;
+	onDeleteOutlet: (outletId: string) => boolean;
 }) {
 	const tabs: { key: MasterTab; label: string }[] = [
 		{ key: 'products', label: 'Produk' },
 		{ key: 'categories', label: 'Kategori' },
 		{ key: 'units', label: 'Satuan' },
+		{ key: 'outlets', label: 'Outlet' },
 	];
 
 	return (
@@ -972,6 +989,17 @@ export function MasterModule({
 					onCreate={onCreateUnit}
 					onUpdate={onUpdateUnit}
 					onDelete={onDeleteUnit}
+				/>
+			) : null}
+
+			{activeTab === 'outlets' ? (
+				<OutletManager
+					outlets={outlets}
+					outletStocks={outletStocks}
+					products={products}
+					onCreate={onCreateOutlet}
+					onUpdate={onUpdateOutlet}
+					onDelete={onDeleteOutlet}
 				/>
 			) : null}
 		</div>
@@ -4580,12 +4608,7 @@ export function MoreMenuDialog({
 		{
 			key: 'master',
 			label: 'Master',
-			desc: 'Kelola produk, kategori, dan satuan',
-		},
-		{
-			key: 'outlets',
-			label: 'Outlet',
-			desc: 'Kelola outlet dan titik koordinat',
+			desc: 'Kelola produk, kategori, satuan, dan outlet',
 		},
 		{
 			key: 'transfer',
