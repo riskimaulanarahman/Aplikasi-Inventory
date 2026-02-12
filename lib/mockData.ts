@@ -4,7 +4,8 @@ import {
   Outlet,
   OutletStockRecord,
   Product,
-  TransferRecord
+  TransferRecord,
+  Unit
 } from "@/lib/types";
 
 export const initialCategories: Category[] = [
@@ -13,10 +14,18 @@ export const initialCategories: Category[] = [
   { id: "c-3", name: "Aksesoris Kantor" }
 ];
 
+export const initialUnits: Unit[] = [
+  { id: "u-1", name: "Pcs" },
+  { id: "u-2", name: "Box" },
+  { id: "u-3", name: "Pack" },
+  { id: "u-4", name: "Kg" },
+  { id: "u-5", name: "Liter" }
+];
+
 export const initialProducts: Product[] = [
-  { id: "p-1", name: "Buku Catatan A5", sku: "NB-A5", stock: 40, categoryId: "c-1" },
-  { id: "p-2", name: "Spidol Hitam", sku: "MK-BLK", stock: 65, categoryId: "c-1" },
-  { id: "p-3", name: "Lakban Kemasan", sku: "PK-TAP", stock: 22, categoryId: "c-2" }
+  { id: "p-1", name: "Buku Catatan A5", sku: "NB-A5", stock: 40, categoryId: "c-1", unitId: "u-1" },
+  { id: "p-2", name: "Spidol Hitam", sku: "MK-BLK", stock: 65, categoryId: "c-1", unitId: "u-1" },
+  { id: "p-3", name: "Lakban Kemasan", sku: "PK-TAP", stock: 22, categoryId: "c-2", unitId: "u-2" }
 ];
 
 export const initialOutlets: Outlet[] = [

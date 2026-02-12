@@ -22,6 +22,7 @@ import {
 	initialOutletStocks,
 	initialProducts,
 	initialTransfers,
+	initialUnits,
 } from '@/lib/mockData';
 import {
 	Category,
@@ -34,6 +35,7 @@ import {
 	Product,
 	StockLocation,
 	TransferRecord,
+	Unit,
 	UsageState,
 } from '@/lib/types';
 
@@ -51,13 +53,13 @@ export type PageTone = 'sky' | 'teal' | 'red' | 'orange' | 'violet';
 
 type MoreTab =
 	| 'history'
-	| 'products'
-	| 'categories'
+	| 'master'
 	| 'outlets'
 	| 'transfer'
 	| 'opname'
 	| 'analytics'
 	| 'export';
+type MasterTab = 'products' | 'categories' | 'units';
 type HistoryFilter = 'all' | MovementType;
 type ToastTone = 'success' | 'error';
 type PageSize = 5 | 10 | 20;
@@ -177,6 +179,21 @@ function getLocationFilterLabel(filter: LocationFilter, outlets: Outlet[]) {
 	const outletId = filter.slice('outlet:'.length);
 	const outlet = outlets.find((item) => item.id === outletId);
 	return outlet ? `${outlet.name} (${outlet.code})` : 'Outlet tidak dikenal';
+}
+
+function getProductUnitLabel(
+	product: Product,
+	unitNameById: Record<string, string>,
+) {
+	return unitNameById[product.unitId] ?? '-';
+}
+
+function parseIntegerInput(value: string, fallback = 0) {
+	if (value.trim() === '') {
+		return fallback;
+	}
+	const parsed = Number.parseInt(value, 10);
+	return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function isMovementInLocation(
@@ -347,6 +364,7 @@ function buildSkuFromName(
 
 export default function InventoryApp() {
 	const [categories, setCategories] = useState<Category[]>(initialCategories);
+	const [units, setUnits] = useState<Unit[]>(initialUnits);
 	const [products, setProducts] = useState<Product[]>(initialProducts);
 	const [outlets, setOutlets] = useState<Outlet[]>(initialOutlets);
 	const [outletStocks, setOutletStocks] =
@@ -356,6 +374,7 @@ export default function InventoryApp() {
 		useState<TransferRecord[]>(initialTransfers);
 	const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
 	const [activeMoreTab, setActiveMoreTab] = useState<MoreTab>('history');
+	const [activeMasterTab, setActiveMasterTab] = useState<MasterTab>('products');
 	const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 	const [error, setError] = useState('');
 	const [toast, setToast] = useState<ToastState | null>(null);
@@ -388,6 +407,12 @@ export default function InventoryApp() {
 			{},
 		);
 	}, [categories]);
+	const unitNameById = useMemo(() => {
+		return units.reduce<Record<string, string>>((accumulator, unit) => {
+			accumulator[unit.id] = unit.name;
+			return accumulator;
+		}, {});
+	}, [units]);
 
 	const totalStokPusat = useMemo(
 		() => products.reduce((sum, product) => sum + product.stock, 0),
@@ -905,16 +930,95 @@ export default function InventoryApp() {
 		return true;
 	};
 
+	const handleCreateUnit = ({ name }: { name: string }): boolean => {
+		const cleanedName = name.trim();
+
+		if (!cleanedName) {
+			markError('Nama satuan wajib diisi.');
+			return false;
+		}
+
+		const duplicate = units.some(
+			(unit) => unit.name.trim().toLowerCase() === cleanedName.toLowerCase(),
+		);
+		if (duplicate) {
+			markError('Satuan sudah ada. Gunakan nama lain.');
+			return false;
+		}
+
+		setUnits((current) => [...current, { id: createId(), name: cleanedName }]);
+		markSuccess('Satuan berhasil ditambahkan.');
+		return true;
+	};
+
+	const handleUpdateUnit = ({
+		unitId,
+		name,
+	}: {
+		unitId: string;
+		name: string;
+	}): boolean => {
+		const cleanedName = name.trim();
+
+		if (!units.some((unit) => unit.id === unitId)) {
+			markError('Satuan tidak ditemukan.');
+			return false;
+		}
+
+		if (!cleanedName) {
+			markError('Nama satuan wajib diisi.');
+			return false;
+		}
+
+		const duplicate = units.some(
+			(unit) =>
+				unit.id !== unitId &&
+				unit.name.trim().toLowerCase() === cleanedName.toLowerCase(),
+		);
+		if (duplicate) {
+			markError('Satuan sudah ada. Gunakan nama lain.');
+			return false;
+		}
+
+		setUnits((current) =>
+			current.map((unit) =>
+				unit.id === unitId ? { ...unit, name: cleanedName } : unit,
+			),
+		);
+		markSuccess('Satuan berhasil diperbarui.');
+		return true;
+	};
+
+	const handleDeleteUnit = (unitId: string): boolean => {
+		const target = units.find((unit) => unit.id === unitId);
+		if (!target) {
+			markError('Satuan tidak ditemukan.');
+			return false;
+		}
+
+		const used = products.some((product) => product.unitId === unitId);
+		if (used) {
+			markError('Satuan tidak bisa dihapus karena masih dipakai produk.');
+			return false;
+		}
+
+		setUnits((current) => current.filter((unit) => unit.id !== unitId));
+		markSuccess('Satuan berhasil dihapus.');
+		return true;
+	};
+
 	const handleCreateProduct = ({
 		name,
 		sku,
 		initialStock,
 		categoryId,
+		unitId,
 	}: {
 		name: string;
 		sku: string;
 		initialStock: number;
 		categoryId: string;
+		unitId: string;
 	}): boolean => {
 		const cleanedName = name.trim();
 		const cleanedSku = sku.trim().toUpperCase();
@@ -929,6 +1033,10 @@ export default function InventoryApp() {
 			!categories.some((category) => category.id === categoryId)
 		) {
 			markError('Kategori wajib dipilih.');
+			return false;
+		}
+		if (!unitId || !units.some((unit) => unit.id === unitId)) {
+			markError('Satuan wajib dipilih.');
 			return false;
 		}
 
@@ -952,6 +1060,7 @@ export default function InventoryApp() {
 			sku: cleanedSku,
 			stock: initialStock,
 			categoryId,
+			unitId,
 		};
 
 		setProducts((current) => [...current, newProduct]);
@@ -980,11 +1089,13 @@ export default function InventoryApp() {
 		name,
 		sku,
 		categoryId,
+		unitId,
 	}: {
 		productId: string;
 		name: string;
 		sku: string;
 		categoryId: string;
+		unitId: string;
 	}): boolean => {
 		const cleanedName = name.trim();
 		const cleanedSku = sku.trim().toUpperCase();
@@ -1004,6 +1115,10 @@ export default function InventoryApp() {
 			!categories.some((category) => category.id === categoryId)
 		) {
 			markError('Kategori wajib dipilih.');
+			return false;
+		}
+		if (!unitId || !units.some((unit) => unit.id === unitId)) {
+			markError('Satuan wajib dipilih.');
 			return false;
 		}
 
@@ -1026,6 +1141,7 @@ export default function InventoryApp() {
 							name: cleanedName,
 							sku: cleanedSku,
 							categoryId,
+							unitId,
 						}
 					: product,
 			),
@@ -1474,7 +1590,10 @@ export default function InventoryApp() {
 					</p>
 				) : null}
 
-				<div key={`${activeTab}-${activeMoreTab}`} className="panel-enter">
+				<div
+					key={`${activeTab}-${activeMoreTab}-${activeMasterTab}`}
+					className="panel-enter"
+				>
 					{activeTab === 'dashboard' ? (
 						<Dashboard
 							totalProducts={products.length}
@@ -1488,6 +1607,7 @@ export default function InventoryApp() {
 							opnameEvents={opnameEvents}
 							products={products}
 							categoryNameById={categoryNameById}
+							unitNameById={unitNameById}
 						/>
 					) : null}
 
@@ -1496,6 +1616,7 @@ export default function InventoryApp() {
 							mode="in"
 							products={products}
 							categories={categories}
+							unitNameById={unitNameById}
 							outlets={outlets}
 							favoritesByLocation={favoritesByLocation}
 							usageByLocation={usageByLocation}
@@ -1510,6 +1631,7 @@ export default function InventoryApp() {
 							mode="out"
 							products={products}
 							categories={categories}
+							unitNameById={unitNameById}
 							outlets={outlets}
 							favoritesByLocation={favoritesByLocation}
 							usageByLocation={usageByLocation}
@@ -1531,12 +1653,16 @@ export default function InventoryApp() {
 							movementPageSize={historyPageSize}
 							movementTotalPages={historyTotalPages}
 							historyFilter={historyFilter}
+							activeMasterTab={activeMasterTab}
 							onChangeHistoryFilter={setHistoryFilter}
+							onChangeMasterTab={setActiveMasterTab}
 							onChangeMovementPage={setHistoryPage}
 							onChangeMovementPageSize={setHistoryPageSize}
 							products={products}
 							categories={categories}
+							units={units}
 							categoryNameById={categoryNameById}
+							unitNameById={unitNameById}
 							productPage={productPage}
 							productPageSize={productPageSize}
 							onChangeProductPage={setProductPage}
@@ -1550,6 +1676,9 @@ export default function InventoryApp() {
 							onCreateCategory={handleCreateCategory}
 							onUpdateCategory={handleUpdateCategory}
 							onDeleteCategory={handleDeleteCategory}
+							onCreateUnit={handleCreateUnit}
+							onUpdateUnit={handleUpdateUnit}
+							onDeleteUnit={handleDeleteUnit}
 							outlets={outlets}
 							outletStocks={outletStocks}
 							transfers={pagedTransfers}
@@ -1738,6 +1867,7 @@ function Dashboard({
 	opnameEvents,
 	products,
 	categoryNameById,
+	unitNameById,
 }: {
 	totalProducts: number;
 	totalOutlets: number;
@@ -1750,6 +1880,7 @@ function Dashboard({
 	opnameEvents: number;
 	products: Product[];
 	categoryNameById: Record<string, string>;
+	unitNameById: Record<string, string>;
 }) {
 	return (
 		<div className="space-y-4">
@@ -1806,7 +1937,7 @@ function Dashboard({
 												: 'bg-emerald-100 text-emerald-700'
 										}`}
 									>
-										{product.stock} unit
+										{product.stock} {getProductUnitLabel(product, unitNameById)}
 									</span>
 								</li>
 							))}
@@ -1834,6 +1965,7 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
 function MovementForm({
 	products,
 	categories,
+	unitNameById,
 	outlets,
 	favoritesByLocation,
 	usageByLocation,
@@ -1844,6 +1976,7 @@ function MovementForm({
 }: {
 	products: Product[];
 	categories: Category[];
+	unitNameById: Record<string, string>;
 	outlets: Outlet[];
 	favoritesByLocation: FavoriteState;
 	usageByLocation: UsageState;
@@ -1908,6 +2041,9 @@ function MovementForm({
 	const selectedProduct = prioritizedProducts.find(
 		(product) => product.id === productId,
 	);
+	const selectedUnitLabel = selectedProduct
+		? getProductUnitLabel(selectedProduct, unitNameById)
+		: '-';
 
 	useEffect(() => {
 		if (prioritizedProducts.length === 0) {
@@ -2009,7 +2145,7 @@ function MovementForm({
 							Stok Tersedia
 						</p>
 						<p className="text-lg font-bold text-slate-900">
-							{availableStock} unit
+							{availableStock} {selectedUnitLabel}
 						</p>
 					</div>
 
@@ -2034,6 +2170,7 @@ function MovementForm({
 				product={selectedProduct ?? null}
 				locationLabel={locationLabel}
 				currentStock={availableStock}
+				unitLabel={selectedUnitLabel}
 				onClose={() => setIsInputModalOpen(false)}
 				onSave={({ qty, note, projectedStock }) => {
 					if (!selectedProduct) {
@@ -2053,8 +2190,8 @@ function MovementForm({
 						setEventLines([
 							`Lokasi: ${locationLabel}`,
 							`Produk: ${selectedProduct.name}`,
-							`Jumlah: ${qty} unit`,
-							`Stok akhir: ${projectedStock} unit`,
+							`Jumlah: ${qty} ${selectedUnitLabel}`,
+							`Stok akhir: ${projectedStock} ${selectedUnitLabel}`,
 							`Catatan: ${note || 'Tanpa catatan'}`,
 						]);
 					}
@@ -2074,8 +2211,10 @@ function MovementForm({
 
 function MoreContent({
 	activeTab,
+	activeMasterTab,
 	tone,
 	onChangeTab,
+	onChangeMasterTab,
 	onOpenMenu,
 	movements,
 	movementTotal,
@@ -2088,7 +2227,9 @@ function MoreContent({
 	onChangeMovementPageSize,
 	products,
 	categories,
+	units,
 	categoryNameById,
+	unitNameById,
 	productPage,
 	productPageSize,
 	onChangeProductPage,
@@ -2099,6 +2240,9 @@ function MoreContent({
 	onCreateCategory,
 	onUpdateCategory,
 	onDeleteCategory,
+	onCreateUnit,
+	onUpdateUnit,
+	onDeleteUnit,
 	outlets,
 	outletStocks,
 	transfers,
@@ -2121,8 +2265,10 @@ function MoreContent({
 	onToggleFavorite,
 }: {
 	activeTab: MoreTab;
+	activeMasterTab: MasterTab;
 	tone: PageTone;
 	onChangeTab: (tab: MoreTab) => void;
+	onChangeMasterTab: (tab: MasterTab) => void;
 	onOpenMenu: () => void;
 	movements: Movement[];
 	movementTotal: number;
@@ -2135,7 +2281,9 @@ function MoreContent({
 	onChangeMovementPageSize: (size: PageSize) => void;
 	products: Product[];
 	categories: Category[];
+	units: Unit[];
 	categoryNameById: Record<string, string>;
+	unitNameById: Record<string, string>;
 	productPage: number;
 	productPageSize: PageSize;
 	onChangeProductPage: (page: number) => void;
@@ -2145,17 +2293,22 @@ function MoreContent({
 		sku: string;
 		initialStock: number;
 		categoryId: string;
+		unitId: string;
 	}) => boolean;
 	onUpdateProduct: (payload: {
 		productId: string;
 		name: string;
 		sku: string;
 		categoryId: string;
+		unitId: string;
 	}) => boolean;
 	onDeleteProduct: (productId: string) => boolean;
 	onCreateCategory: (payload: { name: string }) => boolean;
 	onUpdateCategory: (payload: { categoryId: string; name: string }) => boolean;
 	onDeleteCategory: (categoryId: string) => boolean;
+	onCreateUnit: (payload: { name: string }) => boolean;
+	onUpdateUnit: (payload: { unitId: string; name: string }) => boolean;
+	onDeleteUnit: (unitId: string) => boolean;
 	outlets: Outlet[];
 	outletStocks: OutletStockRecord[];
 	transfers: TransferRecord[];
@@ -2202,8 +2355,7 @@ function MoreContent({
 }) {
 	const tabs: { key: MoreTab; label: string }[] = [
 		{ key: 'history', label: 'Riwayat' },
-		{ key: 'products', label: 'Produk' },
-		{ key: 'categories', label: 'Kategori' },
+		{ key: 'master', label: 'Master' },
 		{ key: 'outlets', label: 'Outlet' },
 		{ key: 'transfer', label: 'Transfer' },
 		{ key: 'opname', label: 'Opname' },
@@ -2252,6 +2404,8 @@ function MoreContent({
 			{activeTab === 'history' ? (
 				<History
 					movements={movements}
+					products={products}
+					unitNameById={unitNameById}
 					totalItems={movementTotal}
 					page={movementPage}
 					pageSize={movementPageSize}
@@ -2263,11 +2417,192 @@ function MoreContent({
 				/>
 			) : null}
 
+			{activeTab === 'master' ? (
+				<MasterModule
+					activeTab={activeMasterTab}
+					onChangeTab={onChangeMasterTab}
+					products={products}
+					categories={categories}
+					units={units}
+					categoryNameById={categoryNameById}
+					unitNameById={unitNameById}
+					productPage={productPage}
+					productPageSize={productPageSize}
+					onChangeProductPage={onChangeProductPage}
+					onChangeProductPageSize={onChangeProductPageSize}
+					onCreateProduct={onCreateProduct}
+					onUpdateProduct={onUpdateProduct}
+					onDeleteProduct={onDeleteProduct}
+					onCreateCategory={onCreateCategory}
+					onUpdateCategory={onUpdateCategory}
+					onDeleteCategory={onDeleteCategory}
+					onCreateUnit={onCreateUnit}
+					onUpdateUnit={onUpdateUnit}
+					onDeleteUnit={onDeleteUnit}
+				/>
+			) : null}
+
+			{activeTab === 'outlets' ? (
+				<OutletManager
+					outlets={outlets}
+					outletStocks={outletStocks}
+					products={products}
+					onCreate={onCreateOutlet}
+					onUpdate={onUpdateOutlet}
+					onDelete={onDeleteOutlet}
+				/>
+			) : null}
+
+			{activeTab === 'transfer' ? (
+				<TransferModule
+					products={products}
+					unitNameById={unitNameById}
+					outlets={outlets}
+					transfers={transfers}
+					totalTransferItems={transferTotal}
+					transferPage={transferPage}
+					transferPageSize={transferPageSize}
+					transferTotalPages={transferTotalPages}
+					getStockByLocation={getStockByLocation}
+					onSubmit={onSubmitTransfer}
+					onChangePage={onChangeTransferPage}
+					onChangePageSize={onChangeTransferPageSize}
+				/>
+			) : null}
+
+			{activeTab === 'opname' ? (
+				<StockOpnameForm
+					products={products}
+					categories={categories}
+					unitNameById={unitNameById}
+					outlets={outlets}
+					favoritesByLocation={favoritesByLocation}
+					usageByLocation={usageByLocation}
+					getStockByLocation={getStockByLocation}
+					onToggleFavorite={onToggleFavorite}
+					onSubmit={onSubmitOpname}
+				/>
+			) : null}
+
+			{activeTab === 'analytics' ? (
+				<StockAnalyticsModule
+					products={products}
+					categories={categories}
+					unitNameById={unitNameById}
+					categoryNameById={categoryNameById}
+					outlets={outlets}
+					outletStocks={outletStocks}
+					movements={movements}
+				/>
+			) : null}
+
+			{activeTab === 'export' ? (
+				<ExportStockModule
+					products={products}
+					unitNameById={unitNameById}
+					categoryNameById={categoryNameById}
+					outlets={outlets}
+					outletStocks={outletStocks}
+					onSuccess={onNotifySuccess}
+					onError={onNotifyError}
+				/>
+			) : null}
+		</div>
+	);
+}
+
+function MasterModule({
+	activeTab,
+	onChangeTab,
+	products,
+	categories,
+	units,
+	categoryNameById,
+	unitNameById,
+	productPage,
+	productPageSize,
+	onChangeProductPage,
+	onChangeProductPageSize,
+	onCreateProduct,
+	onUpdateProduct,
+	onDeleteProduct,
+	onCreateCategory,
+	onUpdateCategory,
+	onDeleteCategory,
+	onCreateUnit,
+	onUpdateUnit,
+	onDeleteUnit,
+}: {
+	activeTab: MasterTab;
+	onChangeTab: (tab: MasterTab) => void;
+	products: Product[];
+	categories: Category[];
+	units: Unit[];
+	categoryNameById: Record<string, string>;
+	unitNameById: Record<string, string>;
+	productPage: number;
+	productPageSize: PageSize;
+	onChangeProductPage: (page: number) => void;
+	onChangeProductPageSize: (size: PageSize) => void;
+	onCreateProduct: (payload: {
+		name: string;
+		sku: string;
+		initialStock: number;
+		categoryId: string;
+		unitId: string;
+	}) => boolean;
+	onUpdateProduct: (payload: {
+		productId: string;
+		name: string;
+		sku: string;
+		categoryId: string;
+		unitId: string;
+	}) => boolean;
+	onDeleteProduct: (productId: string) => boolean;
+	onCreateCategory: (payload: { name: string }) => boolean;
+	onUpdateCategory: (payload: { categoryId: string; name: string }) => boolean;
+	onDeleteCategory: (categoryId: string) => boolean;
+	onCreateUnit: (payload: { name: string }) => boolean;
+	onUpdateUnit: (payload: { unitId: string; name: string }) => boolean;
+	onDeleteUnit: (unitId: string) => boolean;
+}) {
+	const tabs: { key: MasterTab; label: string }[] = [
+		{ key: 'products', label: 'Produk' },
+		{ key: 'categories', label: 'Kategori' },
+		{ key: 'units', label: 'Satuan' },
+	];
+
+	return (
+		<div className="space-y-4">
+			<div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p className="text-xs uppercase tracking-wide text-slate-500">
+					Master Data
+				</p>
+				<div className="mt-2 flex flex-wrap gap-2">
+					{tabs.map((tab) => (
+						<button
+							key={tab.key}
+							type="button"
+							onClick={() => onChangeTab(tab.key)}
+							className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+								activeTab === tab.key
+									? 'bg-slate-900 text-white'
+									: 'bg-slate-100 text-slate-600'
+							}`}
+						>
+							{tab.label}
+						</button>
+					))}
+				</div>
+			</div>
+
 			{activeTab === 'products' ? (
 				<ManageProducts
 					products={products}
 					categories={categories}
+					units={units}
 					categoryNameById={categoryNameById}
+					unitNameById={unitNameById}
 					page={productPage}
 					pageSize={productPageSize}
 					onChangePage={onChangeProductPage}
@@ -2288,65 +2623,13 @@ function MoreContent({
 				/>
 			) : null}
 
-			{activeTab === 'outlets' ? (
-				<OutletManager
-					outlets={outlets}
-					outletStocks={outletStocks}
+			{activeTab === 'units' ? (
+				<UnitManager
+					units={units}
 					products={products}
-					onCreate={onCreateOutlet}
-					onUpdate={onUpdateOutlet}
-					onDelete={onDeleteOutlet}
-				/>
-			) : null}
-
-			{activeTab === 'transfer' ? (
-				<TransferModule
-					products={products}
-					outlets={outlets}
-					transfers={transfers}
-					totalTransferItems={transferTotal}
-					transferPage={transferPage}
-					transferPageSize={transferPageSize}
-					transferTotalPages={transferTotalPages}
-					getStockByLocation={getStockByLocation}
-					onSubmit={onSubmitTransfer}
-					onChangePage={onChangeTransferPage}
-					onChangePageSize={onChangeTransferPageSize}
-				/>
-			) : null}
-
-			{activeTab === 'opname' ? (
-				<StockOpnameForm
-					products={products}
-					categories={categories}
-					outlets={outlets}
-					favoritesByLocation={favoritesByLocation}
-					usageByLocation={usageByLocation}
-					getStockByLocation={getStockByLocation}
-					onToggleFavorite={onToggleFavorite}
-					onSubmit={onSubmitOpname}
-				/>
-			) : null}
-
-			{activeTab === 'analytics' ? (
-				<StockAnalyticsModule
-					products={products}
-					categories={categories}
-					categoryNameById={categoryNameById}
-					outlets={outlets}
-					outletStocks={outletStocks}
-					movements={movements}
-				/>
-			) : null}
-
-			{activeTab === 'export' ? (
-				<ExportStockModule
-					products={products}
-					categoryNameById={categoryNameById}
-					outlets={outlets}
-					outletStocks={outletStocks}
-					onSuccess={onNotifySuccess}
-					onError={onNotifyError}
+					onCreate={onCreateUnit}
+					onUpdate={onUpdateUnit}
+					onDelete={onDeleteUnit}
 				/>
 			) : null}
 		</div>
@@ -2355,6 +2638,8 @@ function MoreContent({
 
 function History({
 	movements,
+	products,
+	unitNameById,
 	totalItems,
 	page,
 	pageSize,
@@ -2365,6 +2650,8 @@ function History({
 	onChangePageSize,
 }: {
 	movements: Movement[];
+	products: Product[];
+	unitNameById: Record<string, string>;
 	totalItems: number;
 	page: number;
 	pageSize: PageSize;
@@ -2413,11 +2700,17 @@ function History({
 				</p>
 			) : (
 				<ul className="mt-5 space-y-3">
-					{movements.map((movement) => (
-						<li
-							key={movement.id}
-							className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex sm:items-center sm:justify-between"
-						>
+					{movements.map((movement) => {
+						const movementUnitLabel =
+							unitNameById[
+								products.find((product) => product.id === movement.productId)
+									?.unitId ?? ''
+							] ?? '-';
+						return (
+							<li
+								key={movement.id}
+								className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex sm:items-center sm:justify-between"
+							>
 							<div>
 								<p className="font-medium text-slate-900">
 									{movement.productName}
@@ -2427,9 +2720,10 @@ function History({
 									{movement.locationLabel}
 								</p>
 								<p className="mt-1 text-xs text-slate-500">
-									Stok setelah transaksi: {movement.balanceAfter} unit
+									Stok setelah transaksi: {movement.balanceAfter}{' '}
+									{movementUnitLabel}
 									{typeof movement.countedStock === 'number'
-										? ` | Stok fisik: ${movement.countedStock}`
+										? ` | Stok fisik: ${movement.countedStock} ${movementUnitLabel}`
 										: ''}
 								</p>
 								<p className="mt-1 text-xs text-slate-500">
@@ -2440,11 +2734,12 @@ function History({
 								<span
 									className={`rounded-full px-3 py-1 text-xs font-semibold ${movementBadgeClass(movement.type)}`}
 								>
-									{movementLabel(movement)}
+									{movementLabel(movement, movementUnitLabel)}
 								</span>
 							</div>
-						</li>
-					))}
+							</li>
+						);
+					})}
 				</ul>
 			)}
 
@@ -2463,6 +2758,7 @@ function History({
 function StockAnalyticsModule({
 	products,
 	categories,
+	unitNameById,
 	categoryNameById,
 	outlets,
 	outletStocks,
@@ -2470,6 +2766,7 @@ function StockAnalyticsModule({
 }: {
 	products: Product[];
 	categories: Category[];
+	unitNameById: Record<string, string>;
 	categoryNameById: Record<string, string>;
 	outlets: Outlet[];
 	outletStocks: OutletStockRecord[];
@@ -2513,6 +2810,7 @@ function StockAnalyticsModule({
 					id: product.id,
 					name: product.name,
 					sku: product.sku,
+					unit: getProductUnitLabel(product, unitNameById),
 					category: categoryNameById[product.categoryId] ?? '-',
 					centralStock: product.stock,
 					outletStock: outletTotal,
@@ -2526,6 +2824,7 @@ function StockAnalyticsModule({
 		outletStockMap,
 		outletStocks,
 		products,
+		unitNameById,
 	]);
 
 	const trendData = useMemo(() => {
@@ -2845,11 +3144,11 @@ function StockAnalyticsModule({
 										{row.name}
 									</p>
 									<p className="text-xs text-slate-500">
-										{row.sku} | {row.category}
+										{row.sku} | {row.category} | {row.unit}
 									</p>
 								</div>
 								<span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-700">
-									{row.filteredStock} unit
+									{row.filteredStock} {row.unit}
 								</span>
 							</div>
 
@@ -2890,10 +3189,11 @@ function StockAnalyticsModule({
 								<th className="w-[24%] px-2 py-2">Produk</th>
 								<th className="w-[14%] px-2 py-2">SKU</th>
 								<th className="w-[18%] px-2 py-2">Kategori</th>
-								<th className="w-[11%] px-2 py-2">Pusat</th>
-								<th className="w-[11%] px-2 py-2">Outlet</th>
-								<th className="w-[11%] px-2 py-2">Gabungan</th>
-								<th className="w-[11%] px-2 py-2">Filter</th>
+								<th className="w-[12%] px-2 py-2">Satuan</th>
+								<th className="w-[9%] px-2 py-2">Pusat</th>
+								<th className="w-[9%] px-2 py-2">Outlet</th>
+								<th className="w-[9%] px-2 py-2">Gabungan</th>
+								<th className="w-[9%] px-2 py-2">Filter</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -2909,6 +3209,7 @@ function StockAnalyticsModule({
 									<td className="px-2 py-2">
 										<p className="truncate">{row.category}</p>
 									</td>
+									<td className="px-2 py-2">{row.unit}</td>
 									<td className="px-2 py-2">{row.centralStock}</td>
 									<td className="px-2 py-2">{row.outletStock}</td>
 									<td className="px-2 py-2">{row.totalCombined}</td>
@@ -2927,6 +3228,7 @@ function StockAnalyticsModule({
 
 function ExportStockModule({
 	products,
+	unitNameById,
 	categoryNameById,
 	outlets,
 	outletStocks,
@@ -2934,6 +3236,7 @@ function ExportStockModule({
 	onError,
 }: {
 	products: Product[];
+	unitNameById: Record<string, string>;
 	categoryNameById: Record<string, string>;
 	outlets: Outlet[];
 	outletStocks: OutletStockRecord[];
@@ -2955,6 +3258,7 @@ function ExportStockModule({
 			Produk: string;
 			SKU: string;
 			Kategori: string;
+			Satuan: string;
 			Qty: number;
 		}> = [];
 
@@ -2969,6 +3273,7 @@ function ExportStockModule({
 					Produk: product.name,
 					SKU: product.sku,
 					Kategori: categoryNameById[product.categoryId] ?? '-',
+					Satuan: getProductUnitLabel(product, unitNameById),
 					Qty: quantityByProductId[product.id] ?? 0,
 				});
 			});
@@ -3016,7 +3321,14 @@ function ExportStockModule({
 		}
 
 		return rows;
-	}, [categoryNameById, locationFilter, outletStocks, outlets, products]);
+	}, [
+		categoryNameById,
+		locationFilter,
+		outletStocks,
+		outlets,
+		products,
+		unitNameById,
+	]);
 
 	const handleExportExcel = () => {
 		if (sheetRows.length === 0) {
@@ -3038,6 +3350,7 @@ function ExportStockModule({
 			{ wch: 28 },
 			{ wch: 16 },
 			{ wch: 22 },
+			{ wch: 14 },
 			{ wch: 10 },
 		];
 		const workbook = XLSX.utils.book_new();
@@ -3099,7 +3412,9 @@ function ExportStockModule({
 function ManageProducts({
 	products,
 	categories,
+	units,
 	categoryNameById,
+	unitNameById,
 	page,
 	pageSize,
 	onChangePage,
@@ -3110,7 +3425,9 @@ function ManageProducts({
 }: {
 	products: Product[];
 	categories: Category[];
+	units: Unit[];
 	categoryNameById: Record<string, string>;
+	unitNameById: Record<string, string>;
 	page: number;
 	pageSize: PageSize;
 	onChangePage: (page: number) => void;
@@ -3120,28 +3437,41 @@ function ManageProducts({
 		sku: string;
 		initialStock: number;
 		categoryId: string;
+		unitId: string;
 	}) => boolean;
 	onUpdate: (payload: {
 		productId: string;
 		name: string;
 		sku: string;
 		categoryId: string;
+		unitId: string;
 	}) => boolean;
 	onDelete: (productId: string) => boolean;
 }) {
 	const [newName, setNewName] = useState('');
 	const [newSku, setNewSku] = useState('');
-	const [newStock, setNewStock] = useState(0);
+	const [newStockInput, setNewStockInput] = useState('0');
 	const [newCategoryId, setNewCategoryId] = useState(categories[0]?.id ?? '');
+	const [newUnitId, setNewUnitId] = useState(units[0]?.id ?? '');
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState('');
 	const [editingSku, setEditingSku] = useState('');
 	const [editingCategoryId, setEditingCategoryId] = useState('');
+	const [editingUnitId, setEditingUnitId] = useState('');
 	const [newNameError, setNewNameError] = useState('');
 	const [editingNameError, setEditingNameError] = useState('');
 	const [isGeneratingSku, setIsGeneratingSku] = useState(false);
 	const [categoryFilter, setCategoryFilter] = useState('all');
 	const [productQuery, setProductQuery] = useState('');
+	const newStock = Math.max(0, parseIntegerInput(newStockInput, 0));
+	const unitOptions = useMemo(
+		() =>
+			units.map((unit) => ({
+				value: unit.id,
+				label: unit.name,
+			})),
+		[units],
+	);
 
 	const categoryUsageCount = useMemo(() => {
 		return products.reduce<Record<string, number>>((accumulator, product) => {
@@ -3183,6 +3513,19 @@ function ManageProducts({
 			setEditingCategoryId(categories[0].id);
 		}
 	}, [categories, editingCategoryId, editingId, newCategoryId]);
+
+	useEffect(() => {
+		if (units.length > 0 && !units.some((unit) => unit.id === newUnitId)) {
+			setNewUnitId(units[0].id);
+		}
+		if (
+			units.length > 0 &&
+			editingId &&
+			!units.some((unit) => unit.id === editingUnitId)
+		) {
+			setEditingUnitId(units[0].id);
+		}
+	}, [editingId, editingUnitId, newUnitId, units]);
 
 	useEffect(() => {
 		if (
@@ -3248,14 +3591,18 @@ function ManageProducts({
 							sku: newSku,
 							initialStock: newStock,
 							categoryId: newCategoryId,
+							unitId: newUnitId,
 						});
 
 						if (success) {
 							setNewName('');
 							setNewSku('');
-							setNewStock(0);
+							setNewStockInput('0');
 							if (categories[0]) {
 								setNewCategoryId(categories[0].id);
+							}
+							if (units[0]) {
+								setNewUnitId(units[0].id);
 							}
 						}
 					}}
@@ -3314,14 +3661,27 @@ function ManageProducts({
 						value={newCategoryId}
 						onChange={setNewCategoryId}
 					/>
+					<SearchableOptionDropdown
+						label="Satuan"
+						options={unitOptions}
+						value={newUnitId}
+						onChange={setNewUnitId}
+						buttonPlaceholder="Pilih satuan"
+						searchPlaceholder="Cari satuan..."
+						emptyText="Satuan tidak ditemukan."
+					/>
 					<input
 						type="number"
 						min={0}
 						step={1}
-						value={newStock}
+						value={newStockInput}
 						onChange={(event) => {
-							const value = Number(event.target.value);
-							setNewStock(Number.isFinite(value) ? value : 0);
+							const raw = event.target.value;
+							setNewStockInput(raw);
+							if (raw === '') {
+								return;
+							}
+							setNewStockInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
 						}}
 						placeholder="Stok awal"
 						className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
@@ -3329,7 +3689,7 @@ function ManageProducts({
 					/>
 					<button
 						type="submit"
-						className="sm:col-span-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+						className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 sm:col-span-2"
 					>
 						Tambah Produk
 					</button>
@@ -3441,6 +3801,16 @@ function ManageProducts({
 												onChange={setEditingCategoryId}
 												compact
 											/>
+											<SearchableOptionDropdown
+												label="Satuan"
+												options={unitOptions}
+												value={editingUnitId}
+												onChange={setEditingUnitId}
+												buttonPlaceholder="Pilih satuan"
+												searchPlaceholder="Cari satuan..."
+												emptyText="Satuan tidak ditemukan."
+												compact
+											/>
 											<div className="flex gap-2">
 												<button
 													type="button"
@@ -3450,6 +3820,7 @@ function ManageProducts({
 															name: editingName,
 															sku: editingSku,
 															categoryId: editingCategoryId,
+															unitId: editingUnitId,
 														});
 
 														if (success) {
@@ -3477,8 +3848,9 @@ function ManageProducts({
 												</p>
 												<p className="text-xs text-slate-500">
 													SKU: {product.sku} | Kategori:{' '}
-													{categoryNameById[product.categoryId] ?? '-'} | Stok
-													pusat: {product.stock}
+													{categoryNameById[product.categoryId] ?? '-'} | Satuan:{' '}
+													{unitNameById[product.unitId] ?? '-'} | Stok pusat:{' '}
+													{product.stock}
 												</p>
 											</div>
 											<div className="flex gap-2">
@@ -3489,6 +3861,7 @@ function ManageProducts({
 														setEditingName(product.name);
 														setEditingSku(product.sku);
 														setEditingCategoryId(product.categoryId);
+														setEditingUnitId(product.unitId);
 														setEditingNameError('');
 													}}
 													className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
@@ -3653,6 +4026,148 @@ function CategoryManager({
 												<button
 													type="button"
 													onClick={() => onDelete(category.id)}
+													className="rounded-lg bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700"
+												>
+													Hapus
+												</button>
+											</div>
+										</div>
+									)}
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function UnitManager({
+	units,
+	products,
+	onCreate,
+	onUpdate,
+	onDelete,
+}: {
+	units: Unit[];
+	products: Product[];
+	onCreate: (payload: { name: string }) => boolean;
+	onUpdate: (payload: { unitId: string; name: string }) => boolean;
+	onDelete: (unitId: string) => boolean;
+}) {
+	const [newName, setNewName] = useState('');
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [editingName, setEditingName] = useState('');
+
+	return (
+		<div className="space-y-4">
+			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+				<h2 className="text-lg font-semibold text-slate-900">Kelola Satuan</h2>
+				<p className="mt-1 text-sm text-slate-500">
+					Satuan dipakai pada master produk dan wajib dipilih.
+				</p>
+
+				<form
+					className="mt-4 flex gap-2"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const success = onCreate({ name: newName });
+						if (success) {
+							setNewName('');
+						}
+					}}
+				>
+					<input
+						value={newName}
+						onChange={(event) => setNewName(event.target.value)}
+						placeholder="Nama satuan"
+						className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+						required
+					/>
+					<button
+						type="submit"
+						className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+					>
+						Tambah
+					</button>
+				</form>
+			</div>
+
+			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+				<h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+					Daftar Satuan
+				</h3>
+
+				{units.length === 0 ? (
+					<p className="mt-4 text-sm text-slate-500">Belum ada satuan.</p>
+				) : (
+					<ul className="mt-4 space-y-2">
+						{units.map((unit) => {
+							const usageCount = products.filter(
+								(product) => product.unitId === unit.id,
+							).length;
+							const isEditing = editingId === unit.id;
+
+							return (
+								<li
+									key={unit.id}
+									className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+								>
+									{isEditing ? (
+										<div className="flex flex-wrap items-center gap-2">
+											<input
+												value={editingName}
+												onChange={(event) => setEditingName(event.target.value)}
+												className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-500"
+											/>
+											<button
+												type="button"
+												onClick={() => {
+													const success = onUpdate({
+														unitId: unit.id,
+														name: editingName,
+													});
+													if (success) {
+														setEditingId(null);
+													}
+												}}
+												className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+											>
+												Simpan
+											</button>
+											<button
+												type="button"
+												onClick={() => setEditingId(null)}
+												className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
+											>
+												Batal
+											</button>
+										</div>
+									) : (
+										<div className="flex flex-wrap items-center justify-between gap-2">
+											<div>
+												<p className="text-sm font-medium text-slate-900">
+													{unit.name}
+												</p>
+												<p className="text-xs text-slate-500">
+													Dipakai oleh {usageCount} produk
+												</p>
+											</div>
+											<div className="flex gap-2">
+												<button
+													type="button"
+													onClick={() => {
+														setEditingId(unit.id);
+														setEditingName(unit.name);
+													}}
+													className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
+												>
+													Ubah
+												</button>
+												<button
+													type="button"
+													onClick={() => onDelete(unit.id)}
 													className="rounded-lg bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700"
 												>
 													Hapus
@@ -4035,6 +4550,7 @@ function OutletManager({
 
 function TransferModule({
 	products,
+	unitNameById,
 	outlets,
 	transfers,
 	totalTransferItems,
@@ -4047,6 +4563,7 @@ function TransferModule({
 	onChangePageSize,
 }: {
 	products: Product[];
+	unitNameById: Record<string, string>;
 	outlets: Outlet[];
 	transfers: TransferRecord[];
 	totalTransferItems: number;
@@ -4067,12 +4584,12 @@ function TransferModule({
 	const [productId, setProductId] = useState(products[0]?.id ?? '');
 	const [note, setNote] = useState('');
 	const [rows, setRows] = useState<
-		Array<{ id: string; outletId: string; qty: number }>
+		Array<{ id: string; outletId: string; qtyInput: string }>
 	>([
 		{
 			id: createId(),
 			outletId: outlets[0]?.id ?? '',
-			qty: 1,
+			qtyInput: '1',
 		},
 	]);
 	const sourceOptions = useMemo(
@@ -4104,9 +4621,9 @@ function TransferModule({
 			products.map((product) => ({
 				value: product.id,
 				label: `${product.name} (${product.sku})`,
-				description: `Stok pusat: ${product.stock} unit`,
+				description: `Stok pusat: ${product.stock} ${getProductUnitLabel(product, unitNameById)}`,
 			})),
-		[products],
+		[products, unitNameById],
 	);
 
 	useEffect(() => {
@@ -4128,7 +4645,7 @@ function TransferModule({
 
 	useEffect(() => {
 		if (outlets.length === 0) {
-			setRows([{ id: createId(), outletId: '', qty: 1 }]);
+			setRows([{ id: createId(), outletId: '', qtyInput: '1' }]);
 			return;
 		}
 
@@ -4148,6 +4665,10 @@ function TransferModule({
 			: { kind: 'outlet', outletId: sourceValue.replace('outlet:', '') };
 
 	const sourceStock = productId ? getStockByLocation(productId, source) : 0;
+	const selectedProduct = products.find((product) => product.id === productId);
+	const selectedUnitLabel = selectedProduct
+		? getProductUnitLabel(selectedProduct, unitNameById)
+		: '-';
 
 	return (
 		<div className="space-y-4">
@@ -4165,7 +4686,7 @@ function TransferModule({
 						source,
 						destinations: rows.map((row) => ({
 							outletId: row.outletId,
-							qty: row.qty,
+							qty: parseIntegerInput(row.qtyInput, 0),
 						})),
 						note,
 					});
@@ -4176,7 +4697,7 @@ function TransferModule({
 							{
 								id: createId(),
 								outletId: outlets[0]?.id ?? '',
-								qty: 1,
+								qtyInput: '1',
 							},
 						]);
 					}
@@ -4216,7 +4737,7 @@ function TransferModule({
 							Stok sumber tersedia
 						</p>
 						<p className="text-lg font-bold text-slate-900">
-							{sourceStock} unit
+							{sourceStock} {selectedUnitLabel}
 						</p>
 					</div>
 
@@ -4233,7 +4754,7 @@ function TransferModule({
 										{
 											id: createId(),
 											outletId: outlets[0]?.id ?? '',
-											qty: 1,
+											qtyInput: '1',
 										},
 									])
 								}
@@ -4270,13 +4791,19 @@ function TransferModule({
 									type="number"
 									min={1}
 									step={1}
-									value={row.qty}
+									value={row.qtyInput}
 									onChange={(event) => {
-										const value = Number(event.target.value);
+										const raw = event.target.value;
 										setRows((current) =>
 											current.map((item) =>
 												item.id === row.id
-													? { ...item, qty: Number.isFinite(value) ? value : 0 }
+													? {
+															...item,
+															qtyInput:
+																raw === ''
+																	? raw
+																	: `${Math.max(0, parseIntegerInput(raw, 0))}`,
+														}
 													: item,
 											),
 										);
@@ -4340,11 +4867,18 @@ function TransferModule({
 					</p>
 				) : (
 					<ul className="mt-4 space-y-3">
-						{transfers.map((transfer) => (
-							<li
-								key={transfer.id}
-								className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-							>
+						{transfers.map((transfer) => {
+							const transferUnitLabel =
+								unitNameById[
+									products.find((product) => product.id === transfer.productId)
+										?.unitId ?? ''
+								] ?? '-';
+
+							return (
+								<li
+									key={transfer.id}
+									className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+								>
 								<p className="text-sm font-semibold text-slate-900">
 									{transfer.productName}
 								</p>
@@ -4353,22 +4887,23 @@ function TransferModule({
 									Sumber: {transfer.sourceLabel}
 								</p>
 								<p className="mt-1 text-xs text-slate-500">
-									Total transfer: {transfer.totalQty} unit
+									Total transfer: {transfer.totalQty} {transferUnitLabel}
 								</p>
 								<p className="mt-1 text-xs text-slate-500">
 									Tujuan:{' '}
 									{transfer.destinations
 										.map(
 											(destination) =>
-												`${destination.outletName} (${destination.qty})`,
+												`${destination.outletName} (${destination.qty} ${transferUnitLabel})`,
 										)
 										.join(', ')}
 								</p>
 								<p className="mt-1 text-xs text-slate-500">
 									Catatan: {transfer.note}
 								</p>
-							</li>
-						))}
+								</li>
+							);
+						})}
 					</ul>
 				)}
 
@@ -4388,6 +4923,7 @@ function TransferModule({
 function StockOpnameForm({
 	products,
 	categories,
+	unitNameById,
 	outlets,
 	favoritesByLocation,
 	usageByLocation,
@@ -4397,6 +4933,7 @@ function StockOpnameForm({
 }: {
 	products: Product[];
 	categories: Category[];
+	unitNameById: Record<string, string>;
 	outlets: Outlet[];
 	favoritesByLocation: FavoriteState;
 	usageByLocation: UsageState;
@@ -4450,6 +4987,9 @@ function StockOpnameForm({
 	const selectedProduct = prioritizedProducts.find(
 		(product) => product.id === productId,
 	);
+	const selectedUnitLabel = selectedProduct
+		? getProductUnitLabel(selectedProduct, unitNameById)
+		: '-';
 
 	useEffect(() => {
 		if (prioritizedProducts.length === 0) {
@@ -4547,7 +5087,7 @@ function StockOpnameForm({
 							Stok Sistem
 						</p>
 						<p className="text-lg font-bold text-slate-900">
-							{systemStock} unit
+							{systemStock} {selectedUnitLabel}
 						</p>
 					</div>
 
@@ -4567,6 +5107,7 @@ function StockOpnameForm({
 				product={selectedProduct ?? null}
 				locationLabel={locationLabel}
 				currentStock={systemStock}
+				unitLabel={selectedUnitLabel}
 				onClose={() => setIsInputModalOpen(false)}
 				onSave={({ actualStock, note, delta }) => {
 					if (!selectedProduct) {
@@ -4585,9 +5126,9 @@ function StockOpnameForm({
 						setEventLines([
 							`Lokasi: ${locationLabel}`,
 							`Produk: ${selectedProduct.name}`,
-							`Stok sistem: ${systemStock} unit`,
-							`Stok fisik: ${actualStock} unit`,
-							`Penyesuaian: ${delta > 0 ? '+' : ''}${delta} unit`,
+							`Stok sistem: ${systemStock} ${selectedUnitLabel}`,
+							`Stok fisik: ${actualStock} ${selectedUnitLabel}`,
+							`Penyesuaian: ${delta > 0 ? '+' : ''}${delta} ${selectedUnitLabel}`,
 							`Catatan: ${note || 'Tanpa catatan'}`,
 						]);
 					}
@@ -5288,6 +5829,7 @@ function MovementInputModal({
 	product,
 	locationLabel,
 	currentStock,
+	unitLabel,
 	onClose,
 	onSave,
 }: {
@@ -5296,6 +5838,7 @@ function MovementInputModal({
 	product: Product | null;
 	locationLabel: string;
 	currentStock: number;
+	unitLabel: string;
 	onClose: () => void;
 	onSave: (payload: {
 		qty: number;
@@ -5303,15 +5846,16 @@ function MovementInputModal({
 		projectedStock: number;
 	}) => void;
 }) {
-	const [qty, setQty] = useState(1);
+	const [qtyInput, setQtyInput] = useState('1');
 	const [note, setNote] = useState('');
+	const qty = parseIntegerInput(qtyInput, 0);
 
 	useEffect(() => {
 		if (!isOpen) {
 			return;
 		}
 
-		setQty(1);
+		setQtyInput('1');
 		setNote('');
 	}, [isOpen, mode, product?.id, locationLabel]);
 
@@ -5340,7 +5884,7 @@ function MovementInputModal({
 
 				<p className="text-xs text-slate-500">
 					{locationLabel} | {product.name} ({product.sku}) | Stok saat ini:{' '}
-					{currentStock}
+					{currentStock} {unitLabel}
 				</p>
 
 				<label className="mt-3 block">
@@ -5351,10 +5895,14 @@ function MovementInputModal({
 						type="number"
 						min={1}
 						step={1}
-						value={qty}
+						value={qtyInput}
 						onChange={(event) => {
-							const value = Number(event.target.value);
-							setQty(Number.isFinite(value) ? value : 0);
+							const raw = event.target.value;
+							setQtyInput(raw);
+							if (raw === '') {
+								return;
+							}
+							setQtyInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
 						}}
 						className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
 					/>
@@ -5367,11 +5915,12 @@ function MovementInputModal({
 					<p
 						className={`text-lg font-bold ${projectedStock < 0 ? 'text-red-600' : 'text-slate-900'}`}
 					>
-						{projectedStock}
+						{projectedStock} {unitLabel}
 					</p>
 					{invalidOut ? (
 						<p className="mt-1 text-[11px] text-red-600">
-							Jumlah melebihi stok tersedia. Tersedia: {currentStock} unit.
+							Jumlah melebihi stok tersedia. Tersedia: {currentStock}{' '}
+							{unitLabel}.
 						</p>
 					) : null}
 				</div>
@@ -5411,6 +5960,7 @@ function OpnameInputModal({
 	product,
 	locationLabel,
 	currentStock,
+	unitLabel,
 	onClose,
 	onSave,
 }: {
@@ -5418,6 +5968,7 @@ function OpnameInputModal({
 	product: Product | null;
 	locationLabel: string;
 	currentStock: number;
+	unitLabel: string;
 	onClose: () => void;
 	onSave: (payload: {
 		actualStock: number;
@@ -5425,15 +5976,16 @@ function OpnameInputModal({
 		delta: number;
 	}) => void;
 }) {
-	const [actualStock, setActualStock] = useState(0);
+	const [actualStockInput, setActualStockInput] = useState('0');
 	const [note, setNote] = useState('');
+	const actualStock = parseIntegerInput(actualStockInput, 0);
 
 	useEffect(() => {
 		if (!isOpen || !product) {
 			return;
 		}
 
-		setActualStock(currentStock);
+		setActualStockInput(`${currentStock}`);
 		setNote('');
 	}, [isOpen, product?.id, currentStock, locationLabel]);
 
@@ -5461,7 +6013,7 @@ function OpnameInputModal({
 
 				<p className="text-xs text-slate-500">
 					{locationLabel} | {product.name} ({product.sku}) | Stok sistem:{' '}
-					{currentStock}
+					{currentStock} {unitLabel}
 				</p>
 
 				<label className="mt-3 block">
@@ -5472,10 +6024,14 @@ function OpnameInputModal({
 						type="number"
 						min={0}
 						step={1}
-						value={actualStock}
+						value={actualStockInput}
 						onChange={(event) => {
-							const value = Number(event.target.value);
-							setActualStock(Number.isFinite(value) ? value : 0);
+							const raw = event.target.value;
+							setActualStockInput(raw);
+							if (raw === '') {
+								return;
+							}
+							setActualStockInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
 						}}
 						className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
 					/>
@@ -5494,7 +6050,7 @@ function OpnameInputModal({
 									: 'text-slate-700'
 						}`}
 					>
-						{delta > 0 ? `+${delta}` : `${delta}`} unit
+						{delta > 0 ? `+${delta}` : `${delta}`} {unitLabel}
 					</p>
 				</div>
 
@@ -5680,14 +6236,9 @@ function MoreMenuDialog({
 			desc: 'Pergerakan stok masuk, keluar, opname',
 		},
 		{
-			key: 'products',
-			label: 'Produk',
-			desc: 'Kelola master produk',
-		},
-		{
-			key: 'categories',
-			label: 'Kategori',
-			desc: 'Kelola kategori produk',
+			key: 'master',
+			label: 'Master',
+			desc: 'Kelola produk, kategori, dan satuan',
 		},
 		{
 			key: 'outlets',
@@ -5787,7 +6338,7 @@ function MoreMenuDialog({
 
 function ToastMessage({ tone, message }: { tone: ToastTone; message: string }) {
 	return (
-		<div className="pointer-events-none fixed right-4 top-4 z-40">
+		<div className="pointer-events-none fixed right-4 top-4 z-[70]">
 			<div
 				className={`toast-enter rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-lg ${
 					tone === 'success' ? 'bg-emerald-600' : 'bg-red-600'
@@ -5811,7 +6362,7 @@ function movementBadgeClass(type: MovementType) {
 	return 'bg-indigo-100 text-indigo-700';
 }
 
-function movementLabel(movement: Movement) {
+function movementLabel(movement: Movement, unitLabel: string) {
 	if (movement.type === 'opname') {
 		if (movement.delta === 0) {
 			return 'OPNAME 0';
@@ -5819,7 +6370,7 @@ function movementLabel(movement: Movement) {
 		return `OPNAME ${movement.delta > 0 ? '+' : ''}${movement.delta}`;
 	}
 
-	return `${movement.type === 'in' ? '+' : '-'}${movement.qty} unit`;
+	return `${movement.type === 'in' ? '+' : '-'}${movement.qty} ${unitLabel}`;
 }
 
 function createId() {

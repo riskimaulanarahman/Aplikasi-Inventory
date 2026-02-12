@@ -5,12 +5,18 @@ export interface Category {
   name: string;
 }
 
+export interface Unit {
+  id: string;
+  name: string;
+}
+
 export interface Product {
   id: string;
   name: string;
   sku: string;
   stock: number;
   categoryId: string;
+  unitId: string;
 }
 
 export interface Outlet {

@@ -24,14 +24,19 @@ Aplikasi manajemen stok untuk gudang pusat dan outlet, dengan fokus pada alur op
   - Daftar riwayat pergerakan stok.
   - Filter tipe transaksi: `Masuk`, `Keluar`, `Opname`.
   - Pagination + pilihan ukuran halaman (`5/10/20`).
-- Produk:
-  - Tambah, ubah, hapus produk.
-  - SKU unik.
-  - Wajib pilih kategori.
-  - Filter daftar produk per kategori + pagination.
-- Kategori:
-  - Tambah, ubah, hapus kategori.
-  - Proteksi hapus jika kategori masih dipakai produk.
+- Master:
+  - Sub-menu `Produk`, `Kategori`, dan `Satuan`.
+  - Produk:
+    - Tambah, ubah, hapus produk.
+    - SKU unik.
+    - Wajib pilih kategori dan satuan.
+    - Filter daftar produk per kategori + pagination.
+  - Kategori:
+    - Tambah, ubah, hapus kategori.
+    - Proteksi hapus jika kategori masih dipakai produk.
+  - Satuan:
+    - Tambah, ubah, hapus satuan.
+    - Proteksi hapus jika satuan masih dipakai produk.
 - Outlet:
   - Tambah, ubah, hapus outlet.
   - Input koordinat (latitude/longitude).
@@ -55,13 +60,14 @@ Aplikasi manajemen stok untuk gudang pusat dan outlet, dengan fokus pada alur op
 - Ekspor Data:
   - Ekspor snapshot stok ke format Excel (`.xlsx`).
   - Filter lokasi: semua lokasi, pusat, atau outlet tertentu.
-  - Sheet tunggal `Stok Snapshot` dengan kolom tanggal export, lokasi, produk, SKU, kategori, dan qty.
+  - Sheet tunggal `Stok Snapshot` dengan kolom tanggal export, lokasi, produk, SKU, kategori, satuan, dan qty.
 
 ### 5) UX & UI
 - Responsive layout desktop/mobile.
 - Bottom navigation mobile + dialog modul "Lainnya".
-- Toast notifikasi sukses/error.
+- Toast notifikasi sukses/error (selalu di atas header).
 - Animasi transisi panel, sheet modal, dan pulse event.
+- Input angka stok dinormalisasi agar entri seperti `0` lalu `2` menjadi `2`.
 
 ## Batasan Saat Ini
 - Data masih bersifat in-memory (state React) dan seeded dari mock data.
