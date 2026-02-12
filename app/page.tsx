@@ -1,5 +1,5 @@
-import InventoryApp from "@/components/InventoryApp";
+import InventoryApp from '@/components/inventory/InventoryApp';
 
-export default function HomePage() {
+export default function Page() {
   return <InventoryApp />;
 }
