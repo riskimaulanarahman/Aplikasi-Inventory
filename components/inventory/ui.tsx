@@ -378,7 +378,6 @@ export function MovementForm({
 			),
 		[products, locationKey, favoritesByLocation, usageByLocation],
 	);
-	const favoriteSet = new Set(favoritesByLocation[locationKey] ?? []);
 
 	const selectedProduct = prioritizedProducts.find(
 		(product) => product.id === productId,
@@ -408,12 +407,6 @@ export function MovementForm({
 		? getStockByLocation(selectedProduct.id, location)
 		: 0;
 	const locationLabel = getLocationLabel(outlets, location);
-	const selectedUsage = selectedProduct
-		? (usageByLocation[locationKey]?.[selectedProduct.id] ?? 0)
-		: 0;
-	const isSelectedFavorite = selectedProduct
-		? favoriteSet.has(selectedProduct.id)
-		: false;
 
 	if (products.length === 0) {
 		return (
@@ -461,28 +454,7 @@ export function MovementForm({
 						}
 					/>
 
-					{selectedProduct ? (
-						<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-							<p className="text-xs text-slate-600">
-								Dipakai {selectedUsage}x pada lokasi ini.
-							</p>
-							<button
-								type="button"
-								onClick={() => onToggleFavorite(location, selectedProduct.id)}
-								className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-									isSelectedFavorite
-										? 'bg-amber-100 text-amber-700'
-										: 'bg-slate-200 text-slate-700'
-								}`}
-							>
-								{isSelectedFavorite
-									? 'Favorit lokasi'
-									: 'Jadikan favorit lokasi'}
-							</button>
-						</div>
-					) : null}
-
-					<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+						<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
 						<p className="text-[11px] uppercase tracking-wide text-slate-500">
 							Stok Tersedia
 						</p>
@@ -3352,7 +3324,6 @@ export function StockOpnameForm({
 			),
 		[products, locationKey, favoritesByLocation, usageByLocation],
 	);
-	const favoriteSet = new Set(favoritesByLocation[locationKey] ?? []);
 
 	const selectedProduct = prioritizedProducts.find(
 		(product) => product.id === productId,
@@ -3382,12 +3353,6 @@ export function StockOpnameForm({
 		? getStockByLocation(selectedProduct.id, location)
 		: 0;
 	const locationLabel = getLocationLabel(outlets, location);
-	const selectedUsage = selectedProduct
-		? (usageByLocation[locationKey]?.[selectedProduct.id] ?? 0)
-		: 0;
-	const isSelectedFavorite = selectedProduct
-		? favoriteSet.has(selectedProduct.id)
-		: false;
 
 	if (products.length === 0) {
 		return (
@@ -3431,28 +3396,7 @@ export function StockOpnameForm({
 						}
 					/>
 
-					{selectedProduct ? (
-						<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-							<p className="text-xs text-slate-600">
-								Dipakai {selectedUsage}x pada lokasi ini.
-							</p>
-							<button
-								type="button"
-								onClick={() => onToggleFavorite(location, selectedProduct.id)}
-								className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
-									isSelectedFavorite
-										? 'bg-amber-100 text-amber-700'
-										: 'bg-slate-200 text-slate-700'
-								}`}
-							>
-								{isSelectedFavorite
-									? 'Favorit lokasi'
-									: 'Jadikan favorit lokasi'}
-							</button>
-						</div>
-					) : null}
-
-					<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+						<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
 						<p className="text-[11px] uppercase tracking-wide text-slate-500">
 							Stok Sistem
 						</p>
