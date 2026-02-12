@@ -149,7 +149,7 @@ export default function OutletMapPicker({ latitude, longitude, onChange }: Outle
   return (
     <div
       ref={containerRef}
-      className="h-64 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+      className="relative z-0 h-64 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
     />
   );
 }
