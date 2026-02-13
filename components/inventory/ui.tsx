@@ -3,67 +3,75 @@
 import dynamic from 'next/dynamic';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+	Bar,
+	CartesianGrid,
+	ComposedChart,
+	Legend,
+	Line,
+	ResponsiveContainer,
+	Tooltip,
+	XAxis,
+	YAxis,
 } from 'recharts';
 import * as XLSX from 'xlsx';
-import { PAGE_SIZE_OPTIONS, PAGE_TONE_STYLES, DEFAULT_COORDINATES } from '@/components/inventory/constants';
 import {
-  AnalyticsPeriod,
-  GeocodeResult,
-  HistoryFilter,
-  LocationFilter,
-  MasterTab,
-  MoreTab,
-  PageSize,
-  PageTone,
-  TabKey,
-  ToastTone,
+	PAGE_SIZE_OPTIONS,
+	PAGE_TONE_STYLES,
+	DEFAULT_COORDINATES,
+} from '@/components/inventory/constants';
+import {
+	AnalyticsPeriod,
+	GeocodeResult,
+	HistoryFilter,
+	LocationFilter,
+	MasterTab,
+	MoreTab,
+	PageSize,
+	PageTone,
+	TabKey,
+	ToastTone,
 } from '@/components/inventory/types';
 import {
-  formatDateKey,
-  formatMonthKey,
-  padDatePart,
-  parseIntegerInput,
+	formatDateKey,
+	formatMonthKey,
+	padDatePart,
+	parseIntegerInput,
 } from '@/components/inventory/utils/date';
 import {
-  getLocationFilterLabel,
-  getLocationLabel,
-  isMovementInLocation,
-  toLocationFilterOptions,
-  toLocationKey,
+	getLocationFilterLabel,
+	getLocationLabel,
+	isMovementInLocation,
+	toLocationFilterOptions,
+	toLocationKey,
 } from '@/components/inventory/utils/location';
-import { buildSkuFromName, getProductUnitLabel, prioritizeProducts } from '@/components/inventory/utils/product';
+import {
+	buildSkuFromName,
+	getProductUnitLabel,
+	prioritizeProducts,
+} from '@/components/inventory/utils/product';
 import { getOutletStock } from '@/components/inventory/utils/stock';
 import {
-  Category,
-  FavoriteState,
-  LocationKey,
-  Movement,
-  MovementType,
-  Outlet,
-  OutletStockRecord,
-  Product,
-  StockLocation,
-  TransferRecord,
-  Unit,
-  UsageState,
+	Category,
+	FavoriteState,
+	LocationKey,
+	Movement,
+	MovementType,
+	Outlet,
+	OutletStockRecord,
+	Product,
+	StockLocation,
+	TransferRecord,
+	Unit,
+	UsageState,
 } from '@/lib/types';
 
 const OutletMapPicker = dynamic(() => import('@/components/OutletMapPicker'), {
-  ssr: false,
-  loading: () => (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
-      Memuat peta...
-    </div>
-  ),
+	ssr: false,
+	loading: () => (
+		<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+			Memuat peta...
+		</div>
+	),
 });
 export function TopBarProfile({
 	tone,
@@ -274,7 +282,7 @@ export function Dashboard({
 									</div>
 									<span
 										className={`rounded-full px-2 py-1 text-xs font-semibold ${
-											product.stock <= 10
+											product.stock <= product.minimumLowStock
 												? 'bg-red-100 text-red-700'
 												: 'bg-emerald-100 text-emerald-700'
 										}`}
@@ -291,7 +299,13 @@ export function Dashboard({
 	);
 }
 
-export function StatCard({ label, value }: { label: string; value: number | string }) {
+export function StatCard({
+	label,
+	value,
+}: {
+	label: string;
+	value: number | string;
+}) {
 	return (
 		<article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
 			<p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
@@ -454,7 +468,7 @@ export function MovementForm({
 						}
 					/>
 
-						<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+					<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
 						<p className="text-[11px] uppercase tracking-wide text-slate-500">
 							Stok Tersedia
 						</p>
@@ -606,6 +620,7 @@ export function MoreContent({
 		name: string;
 		sku: string;
 		initialStock: number;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}) => boolean;
@@ -613,6 +628,7 @@ export function MoreContent({
 		productId: string;
 		name: string;
 		sku: string;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}) => boolean;
@@ -672,8 +688,7 @@ export function MoreContent({
 		{ key: 'master', label: 'Master' },
 		{ key: 'transfer', label: 'Transfer' },
 		{ key: 'opname', label: 'Opname' },
-		{ key: 'analytics', label: 'Analitik' },
-		{ key: 'export', label: 'Ekspor' },
+		{ key: 'report', label: 'Laporan' },
 	];
 
 	return (
@@ -791,21 +806,11 @@ export function MoreContent({
 				/>
 			) : null}
 
-			{activeTab === 'analytics' ? (
-				<StockAnalyticsModule
+			{activeTab === 'report' ? (
+				<ReportModule
 					products={products}
 					categories={categories}
-					unitNameById={unitNameById}
-					categoryNameById={categoryNameById}
-					outlets={outlets}
-					outletStocks={outletStocks}
 					movements={movements}
-				/>
-			) : null}
-
-			{activeTab === 'export' ? (
-				<ExportStockModule
-					products={products}
 					unitNameById={unitNameById}
 					categoryNameById={categoryNameById}
 					outlets={outlets}
@@ -860,6 +865,7 @@ export function MasterModule({
 		name: string;
 		sku: string;
 		initialStock: number;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}) => boolean;
@@ -867,6 +873,7 @@ export function MasterModule({
 		productId: string;
 		name: string;
 		sku: string;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}) => boolean;
@@ -1053,32 +1060,32 @@ export function History({
 								key={movement.id}
 								className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex sm:items-center sm:justify-between"
 							>
-							<div>
-								<p className="font-medium text-slate-900">
-									{movement.productName}
-								</p>
-								<p className="text-xs text-slate-500">
-									{new Date(movement.createdAt).toLocaleString('id-ID')} |{' '}
-									{movement.locationLabel}
-								</p>
-								<p className="mt-1 text-xs text-slate-500">
-									Stok setelah transaksi: {movement.balanceAfter}{' '}
-									{movementUnitLabel}
-									{typeof movement.countedStock === 'number'
-										? ` | Stok fisik: ${movement.countedStock} ${movementUnitLabel}`
-										: ''}
-								</p>
-								<p className="mt-1 text-xs text-slate-500">
-									Catatan: {movement.note}
-								</p>
-							</div>
-							<div className="mt-2 sm:mt-0">
-								<span
-									className={`rounded-full px-3 py-1 text-xs font-semibold ${movementBadgeClass(movement.type)}`}
-								>
-									{movementLabel(movement, movementUnitLabel)}
-								</span>
-							</div>
+								<div>
+									<p className="font-medium text-slate-900">
+										{movement.productName}
+									</p>
+									<p className="text-xs text-slate-500">
+										{new Date(movement.createdAt).toLocaleString('id-ID')} |{' '}
+										{movement.locationLabel}
+									</p>
+									<p className="mt-1 text-xs text-slate-500">
+										Stok setelah transaksi: {movement.balanceAfter}{' '}
+										{movementUnitLabel}
+										{typeof movement.countedStock === 'number'
+											? ` | Stok fisik: ${movement.countedStock} ${movementUnitLabel}`
+											: ''}
+									</p>
+									<p className="mt-1 text-xs text-slate-500">
+										Catatan: {movement.note}
+									</p>
+								</div>
+								<div className="mt-2 sm:mt-0">
+									<span
+										className={`rounded-full px-3 py-1 text-xs font-semibold ${movementBadgeClass(movement.type)}`}
+									>
+										{movementLabel(movement, movementUnitLabel)}
+									</span>
+								</div>
 							</li>
 						);
 					})}
@@ -1121,6 +1128,26 @@ export function StockAnalyticsModule({
 		() => toLocationFilterOptions(outlets),
 		[outlets],
 	);
+	const periodOptions = useMemo(
+		() => [
+			{
+				value: 'last30days',
+				label: '30 Hari',
+				description: 'Tren harian 30 hari terakhir',
+			},
+			{
+				value: 'monthly',
+				label: 'Bulanan (12 bulan)',
+				description: 'Ringkasan tren per bulan',
+			},
+			{
+				value: 'yearly',
+				label: 'Tahunan (5 tahun)',
+				description: 'Ringkasan tren per tahun',
+			},
+		],
+		[],
+	);
 	const outletStockMap = useMemo(() => {
 		return outletStocks.reduce<Record<string, number>>(
 			(accumulator, record) => {
@@ -1130,44 +1157,6 @@ export function StockAnalyticsModule({
 			{},
 		);
 	}, [outletStocks]);
-
-	const reportRows = useMemo(() => {
-		return [...products]
-			.sort((a, b) => a.name.localeCompare(b.name, 'id'))
-			.map((product) => {
-				const outletTotal = outletStocks
-					.filter((record) => record.productId === product.id)
-					.reduce((sum, record) => sum + record.qty, 0);
-				const totalCombined = product.stock + outletTotal;
-
-				let filteredStock = totalCombined;
-				if (locationFilter === 'central') {
-					filteredStock = product.stock;
-				} else if (locationFilter.startsWith('outlet:')) {
-					const outletId = locationFilter.slice('outlet:'.length);
-					filteredStock = outletStockMap[`${outletId}:${product.id}`] ?? 0;
-				}
-
-				return {
-					id: product.id,
-					name: product.name,
-					sku: product.sku,
-					unit: getProductUnitLabel(product, unitNameById),
-					category: categoryNameById[product.categoryId] ?? '-',
-					centralStock: product.stock,
-					outletStock: outletTotal,
-					totalCombined,
-					filteredStock,
-				};
-			});
-	}, [
-		categoryNameById,
-		locationFilter,
-		outletStockMap,
-		outletStocks,
-		products,
-		unitNameById,
-	]);
 
 	const trendData = useMemo(() => {
 		const today = new Date();
@@ -1310,8 +1299,20 @@ export function StockAnalyticsModule({
 	}, [trendData]);
 
 	const currentScopeTotalStock = useMemo(() => {
-		return reportRows.reduce((sum, row) => sum + row.filteredStock, 0);
-	}, [reportRows]);
+		return products.reduce((sum, product) => {
+			if (locationFilter === 'central') {
+				return sum + product.stock;
+			}
+			if (locationFilter.startsWith('outlet:')) {
+				const outletId = locationFilter.slice('outlet:'.length);
+				return sum + (outletStockMap[`${outletId}:${product.id}`] ?? 0);
+			}
+			const outletTotal = outletStocks
+				.filter((record) => record.productId === product.id)
+				.reduce((accumulator, record) => accumulator + record.qty, 0);
+			return sum + product.stock + outletTotal;
+		}, 0);
+	}, [locationFilter, outletStockMap, outletStocks, products]);
 
 	const locationLabel = getLocationFilterLabel(locationFilter, outlets);
 
@@ -1324,37 +1325,25 @@ export function StockAnalyticsModule({
 				</p>
 
 				<div className="mt-4 grid gap-3 md:grid-cols-2">
-					<label className="text-sm font-medium text-slate-700">
-						Lokasi
-						<select
-							value={locationFilter}
-							onChange={(event) =>
-								setLocationFilter(event.target.value as LocationFilter)
-							}
-							className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-violet-500 focus:outline-none"
-						>
-							{locationOptions.map((option) => (
-								<option key={option.value} value={option.value}>
-									{option.label}
-								</option>
-							))}
-						</select>
-					</label>
+					<SearchableOptionDropdown
+						label="Lokasi"
+						options={locationOptions}
+						value={locationFilter}
+						onChange={(next) => setLocationFilter(next as LocationFilter)}
+						buttonPlaceholder="Pilih lokasi"
+						searchPlaceholder="Cari lokasi..."
+						emptyText="Lokasi tidak ditemukan."
+					/>
 
-					<label className="text-sm font-medium text-slate-700">
-						Periode Tren
-						<select
-							value={period}
-							onChange={(event) =>
-								setPeriod(event.target.value as AnalyticsPeriod)
-							}
-							className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-violet-500 focus:outline-none"
-						>
-							<option value="last30days">30 Hari</option>
-							<option value="monthly">Bulanan (12 bulan)</option>
-							<option value="yearly">Tahunan (5 tahun)</option>
-						</select>
-					</label>
+					<SearchableOptionDropdown
+						label="Periode Tren"
+						options={periodOptions}
+						value={period}
+						onChange={(next) => setPeriod(next as AnalyticsPeriod)}
+						buttonPlaceholder="Pilih periode"
+						searchPlaceholder="Cari periode..."
+						emptyText="Periode tidak ditemukan."
+					/>
 				</div>
 
 				<div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1466,104 +1455,6 @@ export function StockAnalyticsModule({
 				</div>
 			</div>
 
-			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-				<h3 className="text-base font-semibold text-slate-900">
-					Laporan Data Barang
-				</h3>
-				<p className="mt-1 text-sm text-slate-500">
-					Menampilkan stok pusat, stok outlet, dan total gabungan per produk.
-				</p>
-
-				<div className="mt-4 space-y-3 md:hidden">
-					{reportRows.map((row) => (
-						<article
-							key={row.id}
-							className="rounded-xl border border-slate-200 bg-slate-50 p-3"
-						>
-							<div className="flex items-start justify-between gap-2">
-								<div>
-									<p className="text-sm font-semibold text-slate-900">
-										{row.name}
-									</p>
-									<p className="text-xs text-slate-500">
-										{row.sku} | {row.category} | {row.unit}
-									</p>
-								</div>
-								<span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-700">
-									{row.filteredStock} {row.unit}
-								</span>
-							</div>
-
-							<div className="mt-3 grid grid-cols-3 gap-2 text-center">
-								<div className="rounded-lg bg-white px-2 py-2">
-									<p className="text-[11px] uppercase tracking-wide text-slate-500">
-										Pusat
-									</p>
-									<p className="text-sm font-semibold text-slate-800">
-										{row.centralStock}
-									</p>
-								</div>
-								<div className="rounded-lg bg-white px-2 py-2">
-									<p className="text-[11px] uppercase tracking-wide text-slate-500">
-										Outlet
-									</p>
-									<p className="text-sm font-semibold text-slate-800">
-										{row.outletStock}
-									</p>
-								</div>
-								<div className="rounded-lg bg-white px-2 py-2">
-									<p className="text-[11px] uppercase tracking-wide text-slate-500">
-										Gabungan
-									</p>
-									<p className="text-sm font-semibold text-slate-800">
-										{row.totalCombined}
-									</p>
-								</div>
-							</div>
-						</article>
-					))}
-				</div>
-
-				<div className="mt-4 hidden md:block">
-					<table className="w-full table-fixed text-left text-sm">
-						<thead>
-							<tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-								<th className="w-[24%] px-2 py-2">Produk</th>
-								<th className="w-[14%] px-2 py-2">SKU</th>
-								<th className="w-[18%] px-2 py-2">Kategori</th>
-								<th className="w-[12%] px-2 py-2">Satuan</th>
-								<th className="w-[9%] px-2 py-2">Pusat</th>
-								<th className="w-[9%] px-2 py-2">Outlet</th>
-								<th className="w-[9%] px-2 py-2">Gabungan</th>
-								<th className="w-[9%] px-2 py-2">Filter</th>
-							</tr>
-						</thead>
-						<tbody>
-							{reportRows.map((row) => (
-								<tr
-									key={row.id}
-									className="border-b border-slate-100 text-slate-700"
-								>
-									<td className="px-2 py-2 font-medium">
-										<p className="truncate">{row.name}</p>
-									</td>
-									<td className="px-2 py-2">{row.sku}</td>
-									<td className="px-2 py-2">
-										<p className="truncate">{row.category}</p>
-									</td>
-									<td className="px-2 py-2">{row.unit}</td>
-									<td className="px-2 py-2">{row.centralStock}</td>
-									<td className="px-2 py-2">{row.outletStock}</td>
-									<td className="px-2 py-2">{row.totalCombined}</td>
-									<td className="px-2 py-2 font-semibold text-violet-700">
-										{row.filteredStock}
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-			</div>
 		</div>
 	);
 }
@@ -1712,22 +1603,15 @@ export function ExportStockModule({
 				</p>
 
 				<div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-					<label className="text-sm font-medium text-slate-700">
-						Lokasi
-						<select
-							value={locationFilter}
-							onChange={(event) =>
-								setLocationFilter(event.target.value as LocationFilter)
-							}
-							className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-violet-500 focus:outline-none"
-						>
-							{locationOptions.map((option) => (
-								<option key={option.value} value={option.value}>
-									{option.label}
-								</option>
-							))}
-						</select>
-					</label>
+					<SearchableOptionDropdown
+						label="Lokasi"
+						options={locationOptions}
+						value={locationFilter}
+						onChange={(next) => setLocationFilter(next as LocationFilter)}
+						buttonPlaceholder="Pilih lokasi"
+						searchPlaceholder="Cari lokasi..."
+						emptyText="Lokasi tidak ditemukan."
+					/>
 
 					<button
 						type="button"
@@ -1747,6 +1631,278 @@ export function ExportStockModule({
 					<span className="font-semibold">{sheetRows.length}</span>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+export function ProductDataReportModule({
+	products,
+	unitNameById,
+	categoryNameById,
+	outlets,
+	outletStocks,
+}: {
+	products: Product[];
+	unitNameById: Record<string, string>;
+	categoryNameById: Record<string, string>;
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
+}) {
+	const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
+	const locationOptions = useMemo(
+		() => toLocationFilterOptions(outlets),
+		[outlets],
+	);
+	const outletStockMap = useMemo(() => {
+		return outletStocks.reduce<Record<string, number>>(
+			(accumulator, record) => {
+				accumulator[`${record.outletId}:${record.productId}`] = record.qty;
+				return accumulator;
+			},
+			{},
+		);
+	}, [outletStocks]);
+
+	const reportRows = useMemo(() => {
+		return [...products]
+			.sort((a, b) => a.name.localeCompare(b.name, 'id'))
+			.map((product) => {
+				const outletTotal = outletStocks
+					.filter((record) => record.productId === product.id)
+					.reduce((sum, record) => sum + record.qty, 0);
+				const totalCombined = product.stock + outletTotal;
+
+				let filteredStock = totalCombined;
+				if (locationFilter === 'central') {
+					filteredStock = product.stock;
+				} else if (locationFilter.startsWith('outlet:')) {
+					const outletId = locationFilter.slice('outlet:'.length);
+					filteredStock = outletStockMap[`${outletId}:${product.id}`] ?? 0;
+				}
+
+				return {
+					id: product.id,
+					name: product.name,
+					sku: product.sku,
+					unit: getProductUnitLabel(product, unitNameById),
+					category: categoryNameById[product.categoryId] ?? '-',
+					centralStock: product.stock,
+					outletStock: outletTotal,
+					totalCombined,
+					filteredStock,
+				};
+			});
+	}, [
+		categoryNameById,
+		locationFilter,
+		outletStockMap,
+		outletStocks,
+		products,
+		unitNameById,
+	]);
+
+	return (
+		<div className="space-y-4">
+			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+				<h2 className="text-lg font-semibold text-slate-900">
+					Laporan Data Barang
+				</h2>
+				<p className="mt-1 text-sm text-slate-500">
+					Menampilkan stok pusat, stok outlet, dan total gabungan per produk.
+				</p>
+
+				<div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+					<SearchableOptionDropdown
+						label="Lokasi"
+						options={locationOptions}
+						value={locationFilter}
+						onChange={(next) => setLocationFilter(next as LocationFilter)}
+						buttonPlaceholder="Pilih lokasi"
+						searchPlaceholder="Cari lokasi..."
+						emptyText="Lokasi tidak ditemukan."
+					/>
+				</div>
+
+				<div className="mt-4 space-y-3 md:hidden">
+					{reportRows.map((row) => (
+						<article
+							key={row.id}
+							className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+						>
+							<div className="flex items-start justify-between gap-2">
+								<div>
+									<p className="text-sm font-semibold text-slate-900">
+										{row.name}
+									</p>
+									<p className="text-xs text-slate-500">
+										{row.sku} | {row.category} | {row.unit}
+									</p>
+								</div>
+								<span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-700">
+									{row.filteredStock} {row.unit}
+								</span>
+							</div>
+
+							<div className="mt-3 grid grid-cols-3 gap-2 text-center">
+								<div className="rounded-lg bg-white px-2 py-2">
+									<p className="text-[11px] uppercase tracking-wide text-slate-500">
+										Pusat
+									</p>
+									<p className="text-sm font-semibold text-slate-800">
+										{row.centralStock}
+									</p>
+								</div>
+								<div className="rounded-lg bg-white px-2 py-2">
+									<p className="text-[11px] uppercase tracking-wide text-slate-500">
+										Outlet
+									</p>
+									<p className="text-sm font-semibold text-slate-800">
+										{row.outletStock}
+									</p>
+								</div>
+								<div className="rounded-lg bg-white px-2 py-2">
+									<p className="text-[11px] uppercase tracking-wide text-slate-500">
+										Gabungan
+									</p>
+									<p className="text-sm font-semibold text-slate-800">
+										{row.totalCombined}
+									</p>
+								</div>
+							</div>
+						</article>
+					))}
+				</div>
+
+				<div className="mt-4 hidden md:block">
+					<table className="w-full table-fixed text-left text-sm">
+						<thead>
+							<tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+								<th className="w-[24%] px-2 py-2">Produk</th>
+								<th className="w-[14%] px-2 py-2">SKU</th>
+								<th className="w-[18%] px-2 py-2">Kategori</th>
+								<th className="w-[12%] px-2 py-2">Satuan</th>
+								<th className="w-[9%] px-2 py-2">Pusat</th>
+								<th className="w-[9%] px-2 py-2">Outlet</th>
+								<th className="w-[9%] px-2 py-2">Gabungan</th>
+								<th className="w-[9%] px-2 py-2">Filter</th>
+							</tr>
+						</thead>
+						<tbody>
+							{reportRows.map((row) => (
+								<tr
+									key={row.id}
+									className="border-b border-slate-100 text-slate-700"
+								>
+									<td className="px-2 py-2 font-medium">
+										<p className="truncate">{row.name}</p>
+									</td>
+									<td className="px-2 py-2">{row.sku}</td>
+									<td className="px-2 py-2">
+										<p className="truncate">{row.category}</p>
+									</td>
+									<td className="px-2 py-2">{row.unit}</td>
+									<td className="px-2 py-2">{row.centralStock}</td>
+									<td className="px-2 py-2">{row.outletStock}</td>
+									<td className="px-2 py-2">{row.totalCombined}</td>
+									<td className="px-2 py-2 font-semibold text-violet-700">
+										{row.filteredStock}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+export function ReportModule({
+	products,
+	categories,
+	movements,
+	unitNameById,
+	categoryNameById,
+	outlets,
+	outletStocks,
+	onSuccess,
+	onError,
+}: {
+	products: Product[];
+	categories: Category[];
+	movements: Movement[];
+	unitNameById: Record<string, string>;
+	categoryNameById: Record<string, string>;
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
+	onSuccess: (message: string) => void;
+	onError: (message: string) => void;
+}) {
+	const [activeReportTab, setActiveReportTab] = useState<
+		'analytics' | 'export' | 'item-report'
+	>('analytics');
+	const tabs: Array<{ key: 'analytics' | 'export' | 'item-report'; label: string }> =
+		[
+			{ key: 'analytics', label: 'Analitik Stok' },
+			{ key: 'export', label: 'Ekspor Data' },
+			{ key: 'item-report', label: 'Laporan Data Barang' },
+		];
+
+	return (
+		<div className="space-y-4">
+			<div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p className="text-xs uppercase tracking-wide text-slate-500">Laporan</p>
+				<div className="mt-2 flex flex-wrap gap-2">
+					{tabs.map((tab) => (
+						<button
+							key={tab.key}
+							type="button"
+							onClick={() => setActiveReportTab(tab.key)}
+							className={`rounded-xl px-3 py-2 text-sm font-semibold ${
+								activeReportTab === tab.key
+									? 'bg-slate-900 text-white'
+									: 'bg-slate-100 text-slate-600'
+							}`}
+						>
+							{tab.label}
+						</button>
+					))}
+				</div>
+			</div>
+
+			{activeReportTab === 'analytics' ? (
+				<StockAnalyticsModule
+					products={products}
+					categories={categories}
+					unitNameById={unitNameById}
+					categoryNameById={categoryNameById}
+					outlets={outlets}
+					outletStocks={outletStocks}
+					movements={movements}
+				/>
+			) : null}
+
+			{activeReportTab === 'export' ? (
+				<ExportStockModule
+					products={products}
+					unitNameById={unitNameById}
+					categoryNameById={categoryNameById}
+					outlets={outlets}
+					outletStocks={outletStocks}
+					onSuccess={onSuccess}
+					onError={onError}
+				/>
+			) : null}
+
+			{activeReportTab === 'item-report' ? (
+				<ProductDataReportModule
+					products={products}
+					unitNameById={unitNameById}
+					categoryNameById={categoryNameById}
+					outlets={outlets}
+					outletStocks={outletStocks}
+				/>
+			) : null}
 		</div>
 	);
 }
@@ -1778,6 +1934,7 @@ export function ManageProducts({
 		name: string;
 		sku: string;
 		initialStock: number;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}) => boolean;
@@ -1785,6 +1942,7 @@ export function ManageProducts({
 		productId: string;
 		name: string;
 		sku: string;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}) => boolean;
@@ -1793,11 +1951,14 @@ export function ManageProducts({
 	const [newName, setNewName] = useState('');
 	const [newSku, setNewSku] = useState('');
 	const [newStockInput, setNewStockInput] = useState('0');
+	const [newMinimumLowStockInput, setNewMinimumLowStockInput] = useState('10');
 	const [newCategoryId, setNewCategoryId] = useState(categories[0]?.id ?? '');
 	const [newUnitId, setNewUnitId] = useState(units[0]?.id ?? '');
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editingName, setEditingName] = useState('');
 	const [editingSku, setEditingSku] = useState('');
+	const [editingMinimumLowStockInput, setEditingMinimumLowStockInput] =
+		useState('10');
 	const [editingCategoryId, setEditingCategoryId] = useState('');
 	const [editingUnitId, setEditingUnitId] = useState('');
 	const [newNameError, setNewNameError] = useState('');
@@ -1806,6 +1967,14 @@ export function ManageProducts({
 	const [categoryFilter, setCategoryFilter] = useState('all');
 	const [productQuery, setProductQuery] = useState('');
 	const newStock = Math.max(0, parseIntegerInput(newStockInput, 0));
+	const newMinimumLowStock = Math.max(
+		0,
+		parseIntegerInput(newMinimumLowStockInput, 10),
+	);
+	const editingMinimumLowStock = Math.max(
+		0,
+		parseIntegerInput(editingMinimumLowStockInput, 10),
+	);
 	const unitOptions = useMemo(
 		() =>
 			units.map((unit) => ({
@@ -1932,6 +2101,7 @@ export function ManageProducts({
 							name: newName,
 							sku: newSku,
 							initialStock: newStock,
+							minimumLowStock: newMinimumLowStock,
 							categoryId: newCategoryId,
 							unitId: newUnitId,
 						});
@@ -1940,6 +2110,7 @@ export function ManageProducts({
 							setNewName('');
 							setNewSku('');
 							setNewStockInput('0');
+							setNewMinimumLowStockInput('10');
 							if (categories[0]) {
 								setNewCategoryId(categories[0].id);
 							}
@@ -1998,37 +2169,75 @@ export function ManageProducts({
 							{newNameError}
 						</p>
 					) : null}
-					<CategorySelectDropdown
-						categories={categories}
-						value={newCategoryId}
-						onChange={setNewCategoryId}
-					/>
-					<SearchableOptionDropdown
-						label="Satuan"
-						options={unitOptions}
-						value={newUnitId}
-						onChange={setNewUnitId}
-						buttonPlaceholder="Pilih satuan"
-						searchPlaceholder="Cari satuan..."
-						emptyText="Satuan tidak ditemukan."
-					/>
-					<input
-						type="number"
-						min={0}
-						step={1}
-						value={newStockInput}
-						onChange={(event) => {
-							const raw = event.target.value;
-							setNewStockInput(raw);
-							if (raw === '') {
-								return;
-							}
-							setNewStockInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
-						}}
-						placeholder="Stok awal"
-						className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
-						required
-					/>
+					<div className="space-y-1 text-sm text-slate-700">
+						<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+							Kategori
+						</span>
+						<CategorySelectDropdown
+							categories={categories}
+							value={newCategoryId}
+							onChange={setNewCategoryId}
+						/>
+					</div>
+					<div className="space-y-1 text-sm text-slate-700">
+						<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+							Satuan
+						</span>
+						<SearchableOptionDropdown
+							options={unitOptions}
+							value={newUnitId}
+							onChange={setNewUnitId}
+							buttonPlaceholder="Pilih satuan"
+							searchPlaceholder="Cari satuan..."
+							emptyText="Satuan tidak ditemukan."
+						/>
+					</div>
+					<label className="space-y-1 text-sm text-slate-700">
+						<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+							Stok Awal
+						</span>
+						<input
+							type="number"
+							min={0}
+							step={1}
+							value={newStockInput}
+							onChange={(event) => {
+								const raw = event.target.value;
+								setNewStockInput(raw);
+								if (raw === '') {
+									return;
+								}
+								setNewStockInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
+							}}
+							placeholder="Stok awal"
+							className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+							required
+						/>
+					</label>
+					<label className="space-y-1 text-sm text-slate-700">
+						<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+							Minimum Stok
+						</span>
+						<input
+							type="number"
+							min={0}
+							step={1}
+							value={newMinimumLowStockInput}
+							onChange={(event) => {
+								const raw = event.target.value;
+								setNewMinimumLowStockInput(raw);
+								if (raw === '') {
+									return;
+								}
+								setNewMinimumLowStockInput(
+									`${Math.max(0, parseIntegerInput(raw, 10))}`,
+								);
+							}}
+							placeholder="Minimum stok rendah"
+							className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+							required
+						/>
+					</label>
 					<button
 						type="submit"
 						className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 sm:col-span-2"
@@ -2137,22 +2346,54 @@ export function ManageProducts({
 													{editingNameError}
 												</p>
 											) : null}
-											<CategorySelectDropdown
-												categories={categories}
-												value={editingCategoryId}
-												onChange={setEditingCategoryId}
-												compact
-											/>
-											<SearchableOptionDropdown
-												label="Satuan"
-												options={unitOptions}
-												value={editingUnitId}
-												onChange={setEditingUnitId}
-												buttonPlaceholder="Pilih satuan"
-												searchPlaceholder="Cari satuan..."
-												emptyText="Satuan tidak ditemukan."
-												compact
-											/>
+											<div className="space-y-1 text-sm text-slate-700">
+												<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+													Kategori
+												</span>
+												<CategorySelectDropdown
+													categories={categories}
+													value={editingCategoryId}
+													onChange={setEditingCategoryId}
+													compact
+												/>
+											</div>
+											<div className="space-y-1 text-sm text-slate-700">
+												<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+													Satuan
+												</span>
+												<SearchableOptionDropdown
+													options={unitOptions}
+													value={editingUnitId}
+													onChange={setEditingUnitId}
+													buttonPlaceholder="Pilih satuan"
+													searchPlaceholder="Cari satuan..."
+													emptyText="Satuan tidak ditemukan."
+													compact
+												/>
+											</div>
+											<label className="space-y-1 text-sm text-slate-700">
+												<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+													Minimum Stok
+												</span>
+												<input
+													type="number"
+													min={0}
+													step={1}
+													value={editingMinimumLowStockInput}
+													onChange={(event) => {
+														const raw = event.target.value;
+														setEditingMinimumLowStockInput(raw);
+														if (raw === '') {
+															return;
+														}
+														setEditingMinimumLowStockInput(
+															`${Math.max(0, parseIntegerInput(raw, 10))}`,
+														);
+													}}
+													placeholder="Minimum stok rendah"
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+												/>
+											</label>
 											<div className="flex gap-2">
 												<button
 													type="button"
@@ -2161,6 +2402,7 @@ export function ManageProducts({
 															productId: product.id,
 															name: editingName,
 															sku: editingSku,
+															minimumLowStock: editingMinimumLowStock,
 															categoryId: editingCategoryId,
 															unitId: editingUnitId,
 														});
@@ -2190,9 +2432,10 @@ export function ManageProducts({
 												</p>
 												<p className="text-xs text-slate-500">
 													SKU: {product.sku} | Kategori:{' '}
-													{categoryNameById[product.categoryId] ?? '-'} | Satuan:{' '}
-													{unitNameById[product.unitId] ?? '-'} | Stok pusat:{' '}
-													{product.stock}
+													{categoryNameById[product.categoryId] ?? '-'} |
+													Satuan: {unitNameById[product.unitId] ?? '-'} | Stok
+													pusat: {product.stock} | Min stok rendah:{' '}
+													{product.minimumLowStock}
 												</p>
 											</div>
 											<div className="flex gap-2">
@@ -2202,6 +2445,9 @@ export function ManageProducts({
 														setEditingId(product.id);
 														setEditingName(product.name);
 														setEditingSku(product.sku);
+														setEditingMinimumLowStockInput(
+															`${product.minimumLowStock}`,
+														);
 														setEditingCategoryId(product.categoryId);
 														setEditingUnitId(product.unitId);
 														setEditingNameError('');
@@ -3011,6 +3257,18 @@ export function TransferModule({
 	const selectedUnitLabel = selectedProduct
 		? getProductUnitLabel(selectedProduct, unitNameById)
 		: '-';
+	const adjustRowQty = (rowId: string, step: number) => {
+		setRows((current) =>
+			current.map((item) => {
+				if (item.id !== rowId) {
+					return item;
+				}
+
+				const nextQty = Math.max(1, parseIntegerInput(item.qtyInput, 1) + step);
+				return { ...item, qtyInput: `${nextQty}` };
+			}),
+		);
+	};
 
 	return (
 		<div className="space-y-4">
@@ -3109,7 +3367,7 @@ export function TransferModule({
 						{rows.map((row, index) => (
 							<div
 								key={row.id}
-								className="grid gap-2 sm:grid-cols-[1fr_140px_auto]"
+								className="grid gap-2 sm:grid-cols-[1fr_220px_auto]"
 							>
 								<SearchableOptionDropdown
 									options={destinationOptions}
@@ -3129,30 +3387,62 @@ export function TransferModule({
 									compact
 								/>
 
-								<input
-									type="number"
-									min={1}
-									step={1}
-									value={row.qtyInput}
-									onChange={(event) => {
-										const raw = event.target.value;
-										setRows((current) =>
-											current.map((item) =>
-												item.id === row.id
-													? {
-															...item,
-															qtyInput:
-																raw === ''
-																	? raw
-																	: `${Math.max(0, parseIntegerInput(raw, 0))}`,
-														}
-													: item,
-											),
-										);
-									}}
-									className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
-									required
-								/>
+								<div className="space-y-2">
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											onClick={() => adjustRowQty(row.id, -1)}
+											className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+											aria-label={`Kurangi qty tujuan ${index + 1}`}
+										>
+											-
+										</button>
+										<input
+											type="number"
+											min={1}
+											step={1}
+											value={row.qtyInput}
+											onChange={(event) => {
+												const raw = event.target.value;
+												setRows((current) =>
+													current.map((item) =>
+														item.id === row.id
+															? {
+																	...item,
+																	qtyInput:
+																		raw === ''
+																			? raw
+																			: `${Math.max(1, parseIntegerInput(raw, 1))}`,
+																}
+															: item,
+													),
+												);
+											}}
+											className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+											required
+										/>
+										<button
+											type="button"
+											onClick={() => adjustRowQty(row.id, 1)}
+											className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+											aria-label={`Tambah qty tujuan ${index + 1}`}
+										>
+											+
+										</button>
+									</div>
+									<div className="flex flex-wrap gap-2">
+										{[1, 5, 10].map((step) => (
+											<button
+												key={step}
+												type="button"
+												onClick={() => adjustRowQty(row.id, step)}
+												className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+											>
+												+{step}
+											</button>
+										))}
+									</div>
+								</div>
 
 								<button
 									type="button"
@@ -3221,28 +3511,28 @@ export function TransferModule({
 									key={transfer.id}
 									className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
 								>
-								<p className="text-sm font-semibold text-slate-900">
-									{transfer.productName}
-								</p>
-								<p className="text-xs text-slate-500">
-									{new Date(transfer.createdAt).toLocaleString('id-ID')} |
-									Sumber: {transfer.sourceLabel}
-								</p>
-								<p className="mt-1 text-xs text-slate-500">
-									Total transfer: {transfer.totalQty} {transferUnitLabel}
-								</p>
-								<p className="mt-1 text-xs text-slate-500">
-									Tujuan:{' '}
-									{transfer.destinations
-										.map(
-											(destination) =>
-												`${destination.outletName} (${destination.qty} ${transferUnitLabel})`,
-										)
-										.join(', ')}
-								</p>
-								<p className="mt-1 text-xs text-slate-500">
-									Catatan: {transfer.note}
-								</p>
+									<p className="text-sm font-semibold text-slate-900">
+										{transfer.productName}
+									</p>
+									<p className="text-xs text-slate-500">
+										{new Date(transfer.createdAt).toLocaleString('id-ID')} |
+										Sumber: {transfer.sourceLabel}
+									</p>
+									<p className="mt-1 text-xs text-slate-500">
+										Total transfer: {transfer.totalQty} {transferUnitLabel}
+									</p>
+									<p className="mt-1 text-xs text-slate-500">
+										Tujuan:{' '}
+										{transfer.destinations
+											.map(
+												(destination) =>
+													`${destination.outletName} (${destination.qty} ${transferUnitLabel})`,
+											)
+											.join(', ')}
+									</p>
+									<p className="mt-1 text-xs text-slate-500">
+										Catatan: {transfer.note}
+									</p>
 								</li>
 							);
 						})}
@@ -3396,7 +3686,7 @@ export function StockOpnameForm({
 						}
 					/>
 
-						<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+					<div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
 						<p className="text-[11px] uppercase tracking-wide text-slate-500">
 							Stok Sistem
 						</p>
@@ -4179,6 +4469,14 @@ export function MovementInputModal({
 
 	const projectedStock = currentStock + (mode === 'in' ? qty : -qty);
 	const invalidOut = mode === 'out' && qty > currentStock;
+	const increaseQty = (step: number) => {
+		const nextQty = Math.max(1, parseIntegerInput(qtyInput, 0) + step);
+		setQtyInput(`${nextQty}`);
+	};
+	const decreaseQty = () => {
+		const nextQty = Math.max(1, parseIntegerInput(qtyInput, 0) - 1);
+		setQtyInput(`${nextQty}`);
+	};
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/30 p-3 sm:items-center">
@@ -4205,21 +4503,51 @@ export function MovementInputModal({
 					<span className="mb-1 block text-xs font-medium text-slate-700">
 						Jumlah
 					</span>
-					<input
-						type="number"
-						min={1}
-						step={1}
-						value={qtyInput}
-						onChange={(event) => {
-							const raw = event.target.value;
-							setQtyInput(raw);
-							if (raw === '') {
-								return;
-							}
-							setQtyInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
-						}}
-						className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
-					/>
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={decreaseQty}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+							aria-label="Kurangi jumlah"
+						>
+							-
+						</button>
+						<input
+							type="number"
+							min={1}
+							step={1}
+							value={qtyInput}
+							onChange={(event) => {
+								const raw = event.target.value;
+								setQtyInput(raw);
+								if (raw === '') {
+									return;
+								}
+								setQtyInput(`${Math.max(1, parseIntegerInput(raw, 1))}`);
+							}}
+							className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+						/>
+						<button
+							type="button"
+							onClick={() => increaseQty(1)}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+							aria-label="Tambah jumlah"
+						>
+							+
+						</button>
+					</div>
+					<div className="mt-2 flex flex-wrap gap-2">
+						{[1, 5, 10].map((step) => (
+							<button
+								key={step}
+								type="button"
+								onClick={() => increaseQty(step)}
+								className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+							>
+								+{step}
+							</button>
+						))}
+					</div>
 				</label>
 
 				<div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -4308,6 +4636,14 @@ export function OpnameInputModal({
 	}
 
 	const delta = actualStock - currentStock;
+	const increaseActualStock = (step: number) => {
+		const nextStock = Math.max(0, parseIntegerInput(actualStockInput, 0) + step);
+		setActualStockInput(`${nextStock}`);
+	};
+	const decreaseActualStock = () => {
+		const nextStock = Math.max(0, parseIntegerInput(actualStockInput, 0) - 1);
+		setActualStockInput(`${nextStock}`);
+	};
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/30 p-3 sm:items-center">
@@ -4334,21 +4670,53 @@ export function OpnameInputModal({
 					<span className="mb-1 block text-xs font-medium text-slate-700">
 						Stok Fisik
 					</span>
-					<input
-						type="number"
-						min={0}
-						step={1}
-						value={actualStockInput}
-						onChange={(event) => {
-							const raw = event.target.value;
-							setActualStockInput(raw);
-							if (raw === '') {
-								return;
-							}
-							setActualStockInput(`${Math.max(0, parseIntegerInput(raw, 0))}`);
-						}}
-						className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
-					/>
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={decreaseActualStock}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+							aria-label="Kurangi stok fisik"
+						>
+							-
+						</button>
+						<input
+							type="number"
+							min={0}
+							step={1}
+							value={actualStockInput}
+							onChange={(event) => {
+								const raw = event.target.value;
+								setActualStockInput(raw);
+								if (raw === '') {
+									return;
+								}
+								setActualStockInput(
+									`${Math.max(0, parseIntegerInput(raw, 0))}`,
+								);
+							}}
+							className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+						/>
+						<button
+							type="button"
+							onClick={() => increaseActualStock(1)}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+							aria-label="Tambah stok fisik"
+						>
+							+
+						</button>
+					</div>
+					<div className="mt-2 flex flex-wrap gap-2">
+						{[1, 5, 10].map((step) => (
+							<button
+								key={step}
+								type="button"
+								onClick={() => increaseActualStock(step)}
+								className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+							>
+								+{step}
+							</button>
+						))}
+					</div>
 				</label>
 
 				<div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -4565,14 +4933,9 @@ export function MoreMenuDialog({
 			desc: 'Penyesuaian stok fisik',
 		},
 		{
-			key: 'analytics',
-			label: 'Analitik Stok',
-			desc: 'Laporan data barang dan tren stok',
-		},
-		{
-			key: 'export',
-			label: 'Ekspor Data',
-			desc: 'Ekspor snapshot stok ke Excel',
+			key: 'report',
+			label: 'Laporan',
+			desc: 'Analitik stok, ekspor data, dan laporan barang',
 		},
 	];
 
@@ -4645,7 +5008,13 @@ export function MoreMenuDialog({
 	);
 }
 
-export function ToastMessage({ tone, message }: { tone: ToastTone; message: string }) {
+export function ToastMessage({
+	tone,
+	message,
+}: {
+	tone: ToastTone;
+	message: string;
+}) {
 	return (
 		<div className="pointer-events-none fixed right-4 top-4 z-[70]">
 			<div
@@ -4683,12 +5052,12 @@ function movementLabel(movement: Movement, unitLabel: string) {
 }
 
 function createId() {
-  if (
-    typeof crypto !== 'undefined' &&
-    typeof crypto.randomUUID === 'function'
-  ) {
-    return crypto.randomUUID();
-  }
+	if (
+		typeof crypto !== 'undefined' &&
+		typeof crypto.randomUUID === 'function'
+	) {
+		return crypto.randomUUID();
+	}
 
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

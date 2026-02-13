@@ -8,8 +8,7 @@ export type MoreTab =
   | 'master'
   | 'transfer'
   | 'opname'
-  | 'analytics'
-  | 'export';
+  | 'report';
 export type MasterTab = 'products' | 'categories' | 'units' | 'outlets';
 export type HistoryFilter = 'all' | MovementType;
 export type ToastTone = 'success' | 'error';

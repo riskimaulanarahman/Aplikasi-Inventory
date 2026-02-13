@@ -110,7 +110,10 @@ export default function InventoryApp() {
 	const totalStok = totalStokPusat + totalStokOutlet;
 
 	const lowStockCount = useMemo(
-		() => products.filter((product) => product.stock <= 10).length,
+		() =>
+			products.filter(
+				(product) => product.stock <= product.minimumLowStock,
+			).length,
 		[products],
 	);
 
@@ -696,12 +699,14 @@ export default function InventoryApp() {
 		name,
 		sku,
 		initialStock,
+		minimumLowStock,
 		categoryId,
 		unitId,
 	}: {
 		name: string;
 		sku: string;
 		initialStock: number;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}): boolean => {
@@ -729,6 +734,12 @@ export default function InventoryApp() {
 			markError('Stok awal harus bilangan bulat dan tidak boleh negatif.');
 			return false;
 		}
+		if (!Number.isInteger(minimumLowStock) || minimumLowStock < 0) {
+			markError(
+				'Minimum stok rendah harus bilangan bulat dan tidak boleh negatif.',
+			);
+			return false;
+		}
 
 		const duplicateSku = products.some(
 			(product) => product.sku.trim().toUpperCase() === cleanedSku,
@@ -744,6 +755,7 @@ export default function InventoryApp() {
 			name: cleanedName,
 			sku: cleanedSku,
 			stock: initialStock,
+			minimumLowStock,
 			categoryId,
 			unitId,
 		};
@@ -773,12 +785,14 @@ export default function InventoryApp() {
 		productId,
 		name,
 		sku,
+		minimumLowStock,
 		categoryId,
 		unitId,
 	}: {
 		productId: string;
 		name: string;
 		sku: string;
+		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
 	}): boolean => {
@@ -806,6 +820,12 @@ export default function InventoryApp() {
 			markError('Satuan wajib dipilih.');
 			return false;
 		}
+		if (!Number.isInteger(minimumLowStock) || minimumLowStock < 0) {
+			markError(
+				'Minimum stok rendah harus bilangan bulat dan tidak boleh negatif.',
+			);
+			return false;
+		}
 
 		const duplicateSku = products.some(
 			(product) =>
@@ -825,6 +845,7 @@ export default function InventoryApp() {
 							...product,
 							name: cleanedName,
 							sku: cleanedSku,
+							minimumLowStock,
 							categoryId,
 							unitId,
 						}

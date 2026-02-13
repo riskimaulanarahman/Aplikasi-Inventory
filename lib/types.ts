@@ -15,6 +15,7 @@ export interface Product {
   name: string;
   sku: string;
   stock: number;
+  minimumLowStock: number;
   categoryId: string;
   unitId: string;
 }

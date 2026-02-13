@@ -23,9 +23,9 @@ export const initialUnits: Unit[] = [
 ];
 
 export const initialProducts: Product[] = [
-  { id: "p-1", name: "Buku Catatan A5", sku: "NB-A5", stock: 40, categoryId: "c-1", unitId: "u-1" },
-  { id: "p-2", name: "Spidol Hitam", sku: "MK-BLK", stock: 65, categoryId: "c-1", unitId: "u-1" },
-  { id: "p-3", name: "Lakban Kemasan", sku: "PK-TAP", stock: 22, categoryId: "c-2", unitId: "u-2" }
+  { id: "p-1", name: "Buku Catatan A5", sku: "NB-A5", stock: 40, minimumLowStock: 10, categoryId: "c-1", unitId: "u-1" },
+  { id: "p-2", name: "Spidol Hitam", sku: "MK-BLK", stock: 65, minimumLowStock: 12, categoryId: "c-1", unitId: "u-1" },
+  { id: "p-3", name: "Lakban Kemasan", sku: "PK-TAP", stock: 22, minimumLowStock: 8, categoryId: "c-2", unitId: "u-2" }
 ];
 
 export const initialOutlets: Outlet[] = [
