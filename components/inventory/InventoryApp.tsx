@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useTransition,
+} from 'react';
 import BottomNav from '@/components/BottomNav';
 import Dashboard from '@/components/inventory/dashboard/Dashboard';
 import DesktopTabs from '@/components/inventory/layout/DesktopTabs';
@@ -236,6 +243,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	const [productPageSize, setProductPageSize] = useState<PageSize>(5);
 	const [transferPage, setTransferPage] = useState(1);
 	const [transferPageSize, setTransferPageSize] = useState<PageSize>(5);
+	const [, startTransition] = useTransition();
 
 	const categoryNameById = useMemo(() => {
 		return categories.reduce<Record<string, string>>(
@@ -474,8 +482,10 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	};
 
 	const openMore = (tab: MoreTab) => {
-		setActiveTab('more');
-		setActiveMoreTab(tab);
+		startTransition(() => {
+			setActiveTab('more');
+			setActiveMoreTab(tab);
+		});
 	};
 
 	const openMoreDialog = () => {
@@ -487,8 +497,10 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	const selectMoreDialogItem = (tab: MoreTab) => {
 		setError('');
 		setIsProfileMenuOpen(false);
-		setActiveMoreTab(tab);
-		setActiveTab('more');
+		startTransition(() => {
+			setActiveMoreTab(tab);
+			setActiveTab('more');
+		});
 		setIsMoreMenuOpen(false);
 	};
 
@@ -496,7 +508,27 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		setError('');
 		setIsMoreMenuOpen(false);
 		setIsProfileMenuOpen(false);
-		setActiveTab(tab);
+		startTransition(() => {
+			setActiveTab(tab);
+		});
+	};
+
+	const handleMoreTabChange = (tab: MoreTab) => {
+		startTransition(() => {
+			setActiveMoreTab(tab);
+		});
+	};
+
+	const handleMasterTabChange = (tab: MasterTab) => {
+		startTransition(() => {
+			setActiveMasterTab(tab);
+		});
+	};
+
+	const handleReportTabChange = (tab: ReportTab) => {
+		startTransition(() => {
+			setActiveReportTab(tab);
+		});
 	};
 
 	const handleProfileClick = () => {
@@ -1489,10 +1521,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 					</p>
 				) : null}
 
-				<div
-					key={`${activeTab}-${activeMoreTab}-${activeMasterTab}`}
-					className="panel-enter"
-				>
+				<div>
 					{activeTab === 'dashboard' ? (
 						<Dashboard
 							totalProducts={products.length}
@@ -1544,7 +1573,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 						<MoreContent
 							activeTab={activeMoreTab}
 							tone={activeTone}
-							onChangeTab={setActiveMoreTab}
+							onChangeTab={handleMoreTabChange}
 							onOpenMenu={openMoreDialog}
 							movements={pagedMovements}
 							movementTotal={filteredMovements.length}
@@ -1554,9 +1583,9 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							historyFilter={historyFilter}
 							activeMasterTab={activeMasterTab}
 							onChangeHistoryFilter={setHistoryFilter}
-							onChangeMasterTab={setActiveMasterTab}
+							onChangeMasterTab={handleMasterTabChange}
 							activeReportTab={activeReportTab}
-							onChangeReportTab={setActiveReportTab}
+							onChangeReportTab={handleReportTabChange}
 							onChangeMovementPage={setHistoryPage}
 							onChangeMovementPageSize={setHistoryPageSize}
 							products={products}

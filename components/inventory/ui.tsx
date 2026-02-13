@@ -3,18 +3,6 @@
 import dynamic from 'next/dynamic';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-	Bar,
-	CartesianGrid,
-	ComposedChart,
-	Legend,
-	Line,
-	ResponsiveContainer,
-	Tooltip,
-	XAxis,
-	YAxis,
-} from 'recharts';
-import * as XLSX from 'xlsx';
-import {
 	PAGE_SIZE_OPTIONS,
 	PAGE_TONE_STYLES,
 	DEFAULT_COORDINATES,
@@ -74,6 +62,18 @@ const OutletMapPicker = dynamic(() => import('@/components/OutletMapPicker'), {
 		</div>
 	),
 });
+
+const StockTrendChart = dynamic(
+	() => import('@/components/inventory/charts/StockTrendChart'),
+	{
+		ssr: false,
+		loading: () => (
+			<div className="flex h-56 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-2 text-sm text-slate-500 sm:h-64 sm:p-3">
+				Memuat grafik...
+			</div>
+		),
+	},
+);
 export function TopBarProfile({
 	tone,
 	headerClass,
@@ -1164,6 +1164,13 @@ export function StockAnalyticsModule({
 			{},
 		);
 	}, [outletStocks]);
+	const outletTotalByProductId = useMemo(() => {
+		return outletStocks.reduce<Record<string, number>>((accumulator, record) => {
+			accumulator[record.productId] =
+				(accumulator[record.productId] ?? 0) + record.qty;
+			return accumulator;
+		}, {});
+	}, [outletStocks]);
 
 	const trendData = useMemo(() => {
 		const today = new Date();
@@ -1314,12 +1321,10 @@ export function StockAnalyticsModule({
 				const outletId = locationFilter.slice('outlet:'.length);
 				return sum + (outletStockMap[`${outletId}:${product.id}`] ?? 0);
 			}
-			const outletTotal = outletStocks
-				.filter((record) => record.productId === product.id)
-				.reduce((accumulator, record) => accumulator + record.qty, 0);
+			const outletTotal = outletTotalByProductId[product.id] ?? 0;
 			return sum + product.stock + outletTotal;
 		}, 0);
-	}, [locationFilter, outletStockMap, outletStocks, products]);
+	}, [locationFilter, outletStockMap, outletTotalByProductId, products]);
 
 	const locationLabel = getLocationFilterLabel(locationFilter, outlets);
 
@@ -1379,55 +1384,7 @@ export function StockAnalyticsModule({
 
 				<div className="mt-5">
 					<div className="h-56 rounded-2xl border border-slate-200 bg-slate-50 p-2 sm:h-64 sm:p-3">
-						<ResponsiveContainer width="100%" height="100%">
-							<ComposedChart
-								data={trendData}
-								margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
-							>
-								<CartesianGrid
-									strokeDasharray="4 4"
-									vertical={false}
-									stroke="#e2e8f0"
-								/>
-								<XAxis
-									dataKey="label"
-									tick={{ fontSize: 10 }}
-									minTickGap={period === 'last30days' ? 22 : 14}
-								/>
-								<YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-								<Tooltip
-									contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
-									formatter={(
-										value: number | string | undefined,
-										name: string | undefined,
-									) => [`${Number(value ?? 0)} unit`, name ?? '-']}
-								/>
-								<Legend />
-								<Bar
-									dataKey="inQty"
-									name="Masuk"
-									fill="#10b981"
-									radius={[6, 6, 0, 0]}
-									animationDuration={650}
-								/>
-								<Bar
-									dataKey="outQty"
-									name="Keluar"
-									fill="#f97316"
-									radius={[6, 6, 0, 0]}
-									animationDuration={700}
-								/>
-								<Line
-									type="monotone"
-									dataKey="netQty"
-									name="Net"
-									stroke="#7c3aed"
-									strokeWidth={2.5}
-									dot={period === 'yearly'}
-									animationDuration={900}
-								/>
-							</ComposedChart>
-						</ResponsiveContainer>
+						<StockTrendChart trendData={trendData} period={period} />
 					</div>
 				</div>
 
@@ -1488,6 +1445,16 @@ export function ExportStockModule({
 		() => toLocationFilterOptions(outlets),
 		[outlets],
 	);
+	const outletQuantitiesByOutletId = useMemo(() => {
+		const map: Record<string, Record<string, number>> = {};
+		for (const record of outletStocks) {
+			if (!map[record.outletId]) {
+				map[record.outletId] = {};
+			}
+			map[record.outletId][record.productId] = record.qty;
+		}
+		return map;
+	}, [outletStocks]);
 
 	const sheetRows = useMemo(() => {
 		const now = new Date();
@@ -1532,30 +1499,14 @@ export function ExportStockModule({
 
 		if (locationFilter === 'all') {
 			outlets.forEach((outlet) => {
-				const outletQuantities = outletStocks.reduce<Record<string, number>>(
-					(accumulator, record) => {
-						if (record.outletId === outlet.id) {
-							accumulator[record.productId] = record.qty;
-						}
-						return accumulator;
-					},
-					{},
-				);
+				const outletQuantities = outletQuantitiesByOutletId[outlet.id] ?? {};
 				pushProductRows(`${outlet.name} (${outlet.code})`, outletQuantities);
 			});
 		} else if (locationFilter.startsWith('outlet:')) {
 			const outletId = locationFilter.slice('outlet:'.length);
 			const outlet = outlets.find((item) => item.id === outletId);
 			if (outlet) {
-				const outletQuantities = outletStocks.reduce<Record<string, number>>(
-					(accumulator, record) => {
-						if (record.outletId === outlet.id) {
-							accumulator[record.productId] = record.qty;
-						}
-						return accumulator;
-					},
-					{},
-				);
+				const outletQuantities = outletQuantitiesByOutletId[outlet.id] ?? {};
 				pushProductRows(`${outlet.name} (${outlet.code})`, outletQuantities);
 			}
 		}
@@ -1564,13 +1515,13 @@ export function ExportStockModule({
 	}, [
 		categoryNameById,
 		locationFilter,
-		outletStocks,
+		outletQuantitiesByOutletId,
 		outlets,
 		products,
 		unitNameById,
 	]);
 
-	const handleExportExcel = () => {
+	const handleExportExcel = async () => {
 		if (sheetRows.length === 0) {
 			onError(
 				'Ekspor dibatalkan. Tidak ada data stok untuk lokasi yang dipilih.',
@@ -1583,20 +1534,25 @@ export function ExportStockModule({
 			now.getMonth() + 1,
 		)}-${padDatePart(now.getDate())}_${padDatePart(now.getHours())}-${padDatePart(now.getMinutes())}.xlsx`;
 
-		const worksheet = XLSX.utils.json_to_sheet(sheetRows);
-		worksheet['!cols'] = [
-			{ wch: 20 },
-			{ wch: 30 },
-			{ wch: 28 },
-			{ wch: 16 },
-			{ wch: 22 },
-			{ wch: 14 },
-			{ wch: 10 },
-		];
-		const workbook = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(workbook, worksheet, 'Stok Snapshot');
-		XLSX.writeFile(workbook, filename);
-		onSuccess(`Ekspor Excel berhasil: ${filename}`);
+		try {
+			const XLSX = await import('xlsx');
+			const worksheet = XLSX.utils.json_to_sheet(sheetRows);
+			worksheet['!cols'] = [
+				{ wch: 20 },
+				{ wch: 30 },
+				{ wch: 28 },
+				{ wch: 16 },
+				{ wch: 22 },
+				{ wch: 14 },
+				{ wch: 10 },
+			];
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(workbook, worksheet, 'Stok Snapshot');
+			XLSX.writeFile(workbook, filename);
+			onSuccess(`Ekspor Excel berhasil: ${filename}`);
+		} catch {
+			onError('Ekspor gagal. Coba lagi dalam beberapa saat.');
+		}
 	};
 
 	return (
@@ -1669,14 +1625,19 @@ export function ProductDataReportModule({
 			{},
 		);
 	}, [outletStocks]);
+	const outletTotalByProductId = useMemo(() => {
+		return outletStocks.reduce<Record<string, number>>((accumulator, record) => {
+			accumulator[record.productId] =
+				(accumulator[record.productId] ?? 0) + record.qty;
+			return accumulator;
+		}, {});
+	}, [outletStocks]);
 
 	const reportRows = useMemo(() => {
 		return [...products]
 			.sort((a, b) => a.name.localeCompare(b.name, 'id'))
 			.map((product) => {
-				const outletTotal = outletStocks
-					.filter((record) => record.productId === product.id)
-					.reduce((sum, record) => sum + record.qty, 0);
+				const outletTotal = outletTotalByProductId[product.id] ?? 0;
 				const totalCombined = product.stock + outletTotal;
 
 				let filteredStock = totalCombined;
@@ -1703,7 +1664,7 @@ export function ProductDataReportModule({
 		categoryNameById,
 		locationFilter,
 		outletStockMap,
-		outletStocks,
+		outletTotalByProductId,
 		products,
 		unitNameById,
 	]);
@@ -2872,6 +2833,30 @@ export function OutletManager({
 		};
 	}, [searchQuery]);
 
+	const outletStockSummary = useMemo(() => {
+		const totalByOutletId: Record<string, number> = {};
+		const activeProductIdsByOutletId: Record<string, Set<string>> = {};
+
+		for (const record of outletStocks) {
+			totalByOutletId[record.outletId] =
+				(totalByOutletId[record.outletId] ?? 0) + record.qty;
+
+			if (record.qty > 0) {
+				if (!activeProductIdsByOutletId[record.outletId]) {
+					activeProductIdsByOutletId[record.outletId] = new Set();
+				}
+				activeProductIdsByOutletId[record.outletId].add(record.productId);
+			}
+		}
+
+		const activeCountByOutletId: Record<string, number> = {};
+		for (const [outletId, productSet] of Object.entries(activeProductIdsByOutletId)) {
+			activeCountByOutletId[outletId] = productSet.size;
+		}
+
+		return { totalByOutletId, activeCountByOutletId, activeProductIdsByOutletId };
+	}, [outletStocks]);
+
 	const clearForm = () => {
 		setEditingId(null);
 		setName('');
@@ -3070,17 +3055,17 @@ export function OutletManager({
 				) : (
 					<ul className="mt-4 space-y-3">
 						{outlets.map((outlet) => {
-							const totalStock = outletStocks
-								.filter((record) => record.outletId === outlet.id)
-								.reduce((sum, record) => sum + record.qty, 0);
-
-							const activeProductCount = new Set(
-								outletStocks
-									.filter(
-										(record) => record.outletId === outlet.id && record.qty > 0,
-									)
-									.map((record) => record.productId),
-							).size;
+							const totalStock =
+								outletStockSummary.totalByOutletId[outlet.id] ?? 0;
+							const activeProductCount =
+								outletStockSummary.activeCountByOutletId[outlet.id] ?? 0;
+							const activeProductSet =
+								outletStockSummary.activeProductIdsByOutletId[outlet.id];
+							const availableProductNames =
+								products
+									.filter((product) => activeProductSet?.has(product.id))
+									.map((product) => product.name)
+									.join(', ') || 'Belum ada stok produk';
 
 							return (
 								<li
@@ -3121,18 +3106,7 @@ export function OutletManager({
 									</div>
 
 									<div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-										Produk tersedia:{' '}
-										{products
-											.filter((product) =>
-												outletStocks.some(
-													(record) =>
-														record.outletId === outlet.id &&
-														record.productId === product.id &&
-														record.qty > 0,
-												),
-											)
-											.map((product) => product.name)
-											.join(', ') || 'Belum ada stok produk'}
+										Produk tersedia: {availableProductNames}
 									</div>
 								</li>
 							);
