@@ -12,9 +12,11 @@ export type MoreTab =
 export type MasterTab = 'products' | 'categories' | 'units' | 'outlets';
 export type ReportTab = 'analytics' | 'export' | 'item-report';
 export type HistoryFilter = 'all' | MovementType;
+export type HistoryPeriod = 'today' | 'last7days' | 'last30days' | 'custom';
 export type ToastTone = 'success' | 'error';
 export type PageSize = 5 | 10 | 20;
 export type AnalyticsPeriod = 'last30days' | 'monthly' | 'yearly';
+export type DashboardPeriod = 'today' | 'last7days' | 'last30days';
 export type LocationFilter = 'all' | 'central' | `outlet:${string}`;
 
 export interface ToastState {

@@ -9,8 +9,10 @@ import {
 } from '@/components/inventory/constants';
 import {
 	AnalyticsPeriod,
+	DashboardPeriod,
 	GeocodeResult,
 	HistoryFilter,
+	HistoryPeriod,
 	LocationFilter,
 	MasterTab,
 	MoreTab,
@@ -38,6 +40,14 @@ import {
 	getProductUnitLabel,
 	prioritizeProducts,
 } from '@/components/inventory/utils/product';
+import {
+	buildDashboardKpis,
+	buildInactiveProducts,
+	buildLowStockPriorities,
+	buildOutletActivitySummaries,
+	buildRecentActivityFeed,
+	buildTopActiveProducts,
+} from '@/components/inventory/dashboard/selectors';
 import { getOutletStock } from '@/components/inventory/utils/stock';
 import {
 	Category,
@@ -207,89 +217,439 @@ export function DesktopTabs({
 }
 
 export function Dashboard({
-	totalProducts,
-	totalOutlets,
-	totalStok,
-	totalStokPusat,
-	totalStokOutlet,
-	lowStockCount,
-	totalStockIn,
-	totalStockOut,
-	opnameEvents,
 	products,
+	movements,
+	transfers,
+	outlets,
+	outletStocks,
 	categoryNameById,
 	unitNameById,
+	onOpenTransfer,
+	onOpenHistory,
+	onOpenReport,
 }: {
-	totalProducts: number;
-	totalOutlets: number;
-	totalStok: number;
-	totalStokPusat: number;
-	totalStokOutlet: number;
-	lowStockCount: number;
-	totalStockIn: number;
-	totalStockOut: number;
-	opnameEvents: number;
 	products: Product[];
+	movements: Movement[];
+	transfers: TransferRecord[];
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
 	categoryNameById: Record<string, string>;
 	unitNameById: Record<string, string>;
+	onOpenTransfer: () => void;
+	onOpenHistory: () => void;
+	onOpenReport: (
+		reportTab?: ReportTab,
+		locationFilter?: LocationFilter,
+	) => void;
 }) {
+	const [dashboardLocationFilter, setDashboardLocationFilter] =
+		useState<LocationFilter>('all');
+	const [dashboardPeriod, setDashboardPeriod] =
+		useState<DashboardPeriod>('last7days');
+	const locationOptions = useMemo(
+		() => toLocationFilterOptions(outlets),
+		[outlets],
+	);
+	const periodOptions = useMemo(
+		() => [
+			{
+				value: 'today',
+				label: 'Hari Ini',
+				description: 'Aktivitas di hari berjalan',
+			},
+			{
+				value: 'last7days',
+				label: '7 Hari Terakhir',
+				description: 'Default operasional harian',
+			},
+			{
+				value: 'last30days',
+				label: '30 Hari Terakhir',
+				description: 'Ringkasan aktivitas bulanan',
+			},
+		],
+		[],
+	);
+	const periodLabelByValue: Record<DashboardPeriod, string> = useMemo(
+		() => ({
+			today: 'Hari Ini',
+			last7days: '7 Hari Terakhir',
+			last30days: '30 Hari Terakhir',
+		}),
+		[],
+	);
+	const kpis = useMemo(
+		() =>
+			buildDashboardKpis({
+				products,
+				outletStocks,
+				movements,
+				period: dashboardPeriod,
+				locationFilter: dashboardLocationFilter,
+			}),
+		[
+			dashboardLocationFilter,
+			dashboardPeriod,
+			movements,
+			outletStocks,
+			products,
+		],
+	);
+	const lowStockPriorities = useMemo(
+		() => buildLowStockPriorities(products, 5),
+		[products],
+	);
+	const inactiveProducts = useMemo(
+		() =>
+			buildInactiveProducts({
+				products,
+				movements,
+				locationFilter: dashboardLocationFilter,
+				limit: 5,
+			}),
+		[dashboardLocationFilter, movements, products],
+	);
+	const recentActivity = useMemo(
+		() =>
+			buildRecentActivityFeed({
+				movements,
+				transfers,
+				period: dashboardPeriod,
+				locationFilter: dashboardLocationFilter,
+				limit: 10,
+			}),
+		[dashboardLocationFilter, dashboardPeriod, movements, transfers],
+	);
+	const topActiveProducts = useMemo(
+		() =>
+			buildTopActiveProducts({
+				products,
+				movements,
+				period: dashboardPeriod,
+				locationFilter: dashboardLocationFilter,
+				limit: 5,
+			}),
+		[dashboardLocationFilter, dashboardPeriod, movements, products],
+	);
+	const outletSummaries = useMemo(
+		() =>
+			buildOutletActivitySummaries({
+				outlets,
+				outletStocks,
+				movements,
+				transfers,
+				period: dashboardPeriod,
+				locationFilter: dashboardLocationFilter,
+			}),
+		[
+			dashboardLocationFilter,
+			dashboardPeriod,
+			movements,
+			outletStocks,
+			outlets,
+			transfers,
+		],
+	);
+	const locationLabel = getLocationFilterLabel(
+		dashboardLocationFilter,
+		outlets,
+	);
+	const periodLabel = periodLabelByValue[dashboardPeriod];
+
+	const getActivityBadgeClass = (
+		typeLabel: 'IN' | 'OUT' | 'OPNAME' | 'TRANSFER',
+	) => {
+		if (typeLabel === 'IN') {
+			return 'bg-teal-100 text-teal-700';
+		}
+		if (typeLabel === 'OUT') {
+			return 'bg-rose-100 text-rose-700';
+		}
+		if (typeLabel === 'OPNAME') {
+			return 'bg-orange-100 text-orange-700';
+		}
+		return 'bg-violet-100 text-violet-700';
+	};
+
 	return (
 		<div className="space-y-4">
-			<div className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-4">
-				<StatCard label="Jumlah Produk" value={totalProducts} />
-				<StatCard label="Jumlah Outlet" value={totalOutlets} />
-				<StatCard label="Stok Total" value={totalStok} />
-				<StatCard label="Total Masuk" value={totalStockIn} />
-				<StatCard label="Total Keluar" value={totalStockOut} />
+			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+				<div className="flex flex-wrap items-center justify-between gap-2">
+					<div>
+						<h2 className="text-lg font-semibold text-slate-900">
+							Dashboard Operasional
+						</h2>
+						<p className="mt-1 text-sm text-slate-500">
+							Pantau kondisi stok dan jalankan aksi operasional dari satu layar.
+						</p>
+					</div>
+					<button
+						type="button"
+						onClick={onOpenHistory}
+						className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+					>
+						Buka Riwayat
+					</button>
+				</div>
+
+				<div className="mt-4 grid gap-3 md:grid-cols-2">
+					<SearchableOptionDropdown
+						label="Lokasi"
+						options={locationOptions}
+						value={dashboardLocationFilter}
+						onChange={(next) =>
+							setDashboardLocationFilter(next as LocationFilter)
+						}
+						buttonPlaceholder="Pilih lokasi"
+						searchPlaceholder="Cari lokasi..."
+						emptyText="Lokasi tidak ditemukan."
+					/>
+					<SearchableOptionDropdown
+						label="Periode KPI"
+						options={periodOptions}
+						value={dashboardPeriod}
+						onChange={(next) => setDashboardPeriod(next as DashboardPeriod)}
+						buttonPlaceholder="Pilih periode"
+						searchPlaceholder="Cari periode..."
+						emptyText="Periode tidak ditemukan."
+					/>
+				</div>
+
+				<div className="mt-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700">
+					Lokasi: {locationLabel} | Periode: {periodLabel}
+				</div>
 			</div>
 
-			<div className="grid gap-4 sm:grid-cols-2">
+			<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+				<StatCard
+					label="Stok Scope"
+					value={kpis.scopeStock}
+					subtitle="Total stok sesuai lokasi yang dipilih."
+				/>
+				<StatCard
+					label="Masuk"
+					value={kpis.inQty}
+					subtitle="Akumulasi stok masuk pada periode aktif."
+				/>
+				<StatCard
+					label="Keluar"
+					value={kpis.outQty}
+					subtitle="Akumulasi stok keluar pada periode aktif."
+				/>
+				<StatCard
+					label="Net"
+					value={kpis.netQty}
+					subtitle="Selisih stok masuk dikurangi stok keluar."
+				/>
+				<StatCard
+					label="Event Opname"
+					value={kpis.opnameEvents}
+					subtitle="Jumlah kejadian opname pada periode aktif."
+				/>
+				<StatCard
+					label="Produk dengan Stok Rendah"
+					value={kpis.lowStockCount}
+					subtitle="Produk pusat yang menyentuh batas minimum stok."
+				/>
+			</div>
+
+			<div className="grid gap-4 lg:grid-cols-2">
 				<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-					<h2 className="text-lg font-semibold text-slate-900">
-						Ringkasan Stok
-					</h2>
-					<ul className="mt-3 space-y-2 text-sm text-slate-600">
-						<li>Stok pusat: {totalStokPusat} unit</li>
-						<li>Stok outlet: {totalStokOutlet} unit</li>
-						<li>Produk stok rendah (pusat): {lowStockCount} produk</li>
-						<li>Jumlah opname: {opnameEvents} kejadian</li>
-					</ul>
+					<h3 className="text-base font-semibold text-slate-900">
+						Alert & Prioritas
+					</h3>
+
+					<div className="mt-4">
+						<p className="text-xs uppercase tracking-wide text-slate-500">
+							Prioritas Stok Rendah
+						</p>
+						{lowStockPriorities.length === 0 ? (
+							<p className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+								Tidak ada produk dengan stok rendah.
+							</p>
+						) : (
+							<ul className="mt-2 space-y-2">
+								{lowStockPriorities.map((item) => {
+									const product = products.find(
+										(row) => row.id === item.productId,
+									);
+									const unit = product
+										? getProductUnitLabel(product, unitNameById)
+										: '-';
+									return (
+										<li key={item.productId}>
+											<button
+												type="button"
+												onClick={() => onOpenReport('item-report')}
+												className="w-full rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-left transition hover:bg-red-100"
+											>
+												<p className="text-sm font-semibold text-slate-900">
+													{item.name}
+												</p>
+												<p className="text-xs text-slate-600">
+													{item.sku} |{' '}
+													{categoryNameById[product?.categoryId ?? ''] ?? '-'}
+												</p>
+												<p className="mt-1 text-xs font-semibold text-red-700">
+													Stok {item.currentStock} {unit} | Minimum{' '}
+													{item.minimumLowStock} {unit} | Gap {item.gap}
+												</p>
+											</button>
+										</li>
+									);
+								})}
+							</ul>
+						)}
+					</div>
+
+					<div className="mt-4">
+						<p className="text-xs uppercase tracking-wide text-slate-500">
+							Produk Tanpa Aktivitas 30 Hari
+						</p>
+						{inactiveProducts.length === 0 ? (
+							<p className="mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+								Semua produk memiliki aktivitas dalam 30 hari terakhir.
+							</p>
+						) : (
+							<ul className="mt-2 space-y-2">
+								{inactiveProducts.map((item) => (
+									<li
+										key={item.productId}
+										className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+									>
+										<p className="text-sm font-medium text-slate-900">
+											{item.name}
+										</p>
+										<p className="text-xs text-slate-500">
+											{item.sku} |{' '}
+											{item.daysInactive >= 999
+												? 'Belum pernah ada aktivitas'
+												: `${item.daysInactive} hari tidak aktif`}
+										</p>
+									</li>
+								))}
+							</ul>
+						)}
+					</div>
 				</div>
 
 				<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-					<h2 className="text-lg font-semibold text-slate-900">
-						Stok Produk di Pusat
-					</h2>
+					<div className="flex items-center justify-between gap-2">
+						<h3 className="text-base font-semibold text-slate-900">
+							Aktivitas Terkini
+						</h3>
+						<span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+							{recentActivity.length} item
+						</span>
+					</div>
 
-					{products.length === 0 ? (
+					{recentActivity.length === 0 ? (
 						<p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-							Belum ada produk. Tambahkan dari menu Produk.
+							Belum ada aktivitas pada filter saat ini.
 						</p>
 					) : (
 						<ul className="mt-4 space-y-2">
-							{products.map((product) => (
+							{recentActivity.map((item) => (
 								<li
-									key={product.id}
-									className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+									key={item.id}
+									className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
 								>
-									<div>
-										<p className="text-sm font-medium text-slate-900">
-											{product.name}
-										</p>
-										<p className="text-xs text-slate-500">
-											{product.sku} |{' '}
-											{categoryNameById[product.categoryId] ?? '-'}
-										</p>
-									</div>
-									<span
-										className={`rounded-full px-2 py-1 text-xs font-semibold ${
-											product.stock <= product.minimumLowStock
-												? 'bg-red-100 text-red-700'
-												: 'bg-emerald-100 text-emerald-700'
-										}`}
+									<button
+										type="button"
+										onClick={() =>
+											item.kind === 'movement'
+												? onOpenHistory()
+												: onOpenTransfer()
+										}
+										className="w-full text-left"
 									>
-										{product.stock} {getProductUnitLabel(product, unitNameById)}
-									</span>
+										<div className="flex items-center justify-between gap-2">
+											<span
+												className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getActivityBadgeClass(item.typeLabel)}`}
+											>
+												{item.typeLabel}
+											</span>
+											<span className="text-xs font-semibold text-slate-700">
+												Qty {item.qtyText}
+											</span>
+										</div>
+										<p className="mt-2 text-sm font-semibold text-slate-900">
+											{item.title}
+										</p>
+										<p className="text-xs text-slate-500">{item.subtitle}</p>
+										<p className="mt-1 text-[11px] text-slate-500">
+											{new Date(item.createdAt).toLocaleString('id-ID')}
+										</p>
+									</button>
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+			</div>
+
+			<div className="grid gap-4 lg:grid-cols-2">
+				<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+					<h3 className="text-base font-semibold text-slate-900">
+						Top Produk Aktif
+					</h3>
+					{topActiveProducts.length === 0 ? (
+						<p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
+							Belum ada aktivitas produk pada periode ini.
+						</p>
+					) : (
+						<ul className="mt-4 space-y-2">
+							{topActiveProducts.map((item) => (
+								<li
+									key={item.productId}
+									className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+								>
+									<p className="text-sm font-semibold text-slate-900">
+										{item.name}
+									</p>
+									<p className="text-xs text-slate-500">{item.sku}</p>
+									<p className="mt-1 text-xs font-semibold text-violet-700">
+										{item.events} event | Total qty {item.totalQty}
+									</p>
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+
+				<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+					<h3 className="text-base font-semibold text-slate-900">
+						Ringkasan Outlet
+					</h3>
+					{outletSummaries.length === 0 ? (
+						<p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
+							{dashboardLocationFilter === 'central'
+								? 'Filter Pusat tidak menampilkan ringkasan outlet.'
+								: 'Belum ada outlet untuk ditampilkan.'}
+						</p>
+					) : (
+						<ul className="mt-4 space-y-2">
+							{outletSummaries.map((item) => (
+								<li key={item.outletId}>
+									<button
+										type="button"
+										onClick={() =>
+											onOpenReport('analytics', `outlet:${item.outletId}`)
+										}
+										className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:bg-slate-100"
+									>
+										<p className="text-sm font-semibold text-slate-900">
+											{item.outletName} ({item.outletCode})
+										</p>
+										<p className="mt-1 text-xs text-slate-500">
+											Stok outlet: {item.totalStock} | Movement:{' '}
+											{item.movementEvents} | Transfer: {item.transferEvents}
+										</p>
+										<p className="mt-1 text-xs font-semibold text-violet-700">
+											Total event: {item.totalEvents} (klik untuk analitik
+											outlet)
+										</p>
+									</button>
 								</li>
 							))}
 						</ul>
@@ -303,9 +663,11 @@ export function Dashboard({
 export function StatCard({
 	label,
 	value,
+	subtitle,
 }: {
 	label: string;
 	value: number | string;
+	subtitle?: string;
 }) {
 	return (
 		<article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -315,6 +677,9 @@ export function StatCard({
 			>
 				{value}
 			</p>
+			{subtitle ? (
+				<p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+			) : null}
 		</article>
 	);
 }
@@ -353,34 +718,24 @@ export function MovementForm({
 	const [isInputModalOpen, setIsInputModalOpen] = useState(false);
 	const [eventLines, setEventLines] = useState<string[] | null>(null);
 	const locationOptions = useMemo(() => {
-		const base = [
+		return [
 			{
 				value: 'central',
 				label: 'Pusat',
 				description: 'Gudang pusat',
 			},
-		];
-
-		if (mode === 'in') {
-			return base;
-		}
-
-		return [
-			...base,
 			...outlets.map((outlet) => ({
 				value: `outlet:${outlet.id}`,
 				label: `${outlet.name} (${outlet.code})`,
 				description: outlet.address,
 			})),
 		];
-	}, [mode, outlets]);
+	}, [outlets]);
 
 	const location: StockLocation =
-		mode === 'in'
+		locationValue === 'central'
 			? { kind: 'central' }
-			: locationValue === 'central'
-				? { kind: 'central' }
-				: { kind: 'outlet', outletId: locationValue.replace('outlet:', '') };
+			: { kind: 'outlet', outletId: locationValue.replace('outlet:', '') };
 
 	const locationKey = toLocationKey(location);
 	const prioritizedProducts = useMemo(
@@ -444,8 +799,8 @@ export function MovementForm({
 				</h2>
 				<p className="mt-1 text-sm text-slate-500">
 					{mode === 'in'
-						? 'Stok masuk hanya untuk lokasi pusat.'
-						: 'Stok keluar bisa diproses dari pusat atau outlet.'}
+						? 'Stok masuk bisa diproses dari pusat atau cabang/outlet.'
+						: 'Stok keluar bisa diproses dari pusat atau cabang/outlet.'}
 				</p>
 
 				<div className="mt-4 space-y-3">
@@ -553,7 +908,15 @@ export function MoreContent({
 	movementPageSize,
 	movementTotalPages,
 	historyFilter,
+	historyPeriod,
+	historyCustomStartDate,
+	historyCustomEndDate,
+	historySearchQuery,
 	onChangeHistoryFilter,
+	onChangeHistoryPeriod,
+	onChangeHistoryCustomStartDate,
+	onChangeHistoryCustomEndDate,
+	onChangeHistorySearchQuery,
 	onChangeMovementPage,
 	onChangeMovementPageSize,
 	products,
@@ -583,6 +946,8 @@ export function MoreContent({
 	transferTotalPages,
 	onChangeTransferPage,
 	onChangeTransferPageSize,
+	analyticsLocationPreset,
+	onConsumeAnalyticsLocationPreset,
 	onCreateOutlet,
 	onUpdateOutlet,
 	onDeleteOutlet,
@@ -609,7 +974,15 @@ export function MoreContent({
 	movementPageSize: PageSize;
 	movementTotalPages: number;
 	historyFilter: HistoryFilter;
+	historyPeriod: HistoryPeriod;
+	historyCustomStartDate: string;
+	historyCustomEndDate: string;
+	historySearchQuery: string;
 	onChangeHistoryFilter: (filter: HistoryFilter) => void;
+	onChangeHistoryPeriod: (period: HistoryPeriod) => void;
+	onChangeHistoryCustomStartDate: (value: string) => void;
+	onChangeHistoryCustomEndDate: (value: string) => void;
+	onChangeHistorySearchQuery: (value: string) => void;
 	onChangeMovementPage: (page: number) => void;
 	onChangeMovementPageSize: (size: PageSize) => void;
 	products: Product[];
@@ -653,6 +1026,8 @@ export function MoreContent({
 	transferTotalPages: number;
 	onChangeTransferPage: (page: number) => void;
 	onChangeTransferPageSize: (size: PageSize) => void;
+	analyticsLocationPreset?: LocationFilter | null;
+	onConsumeAnalyticsLocationPreset?: () => void;
 	onCreateOutlet: (payload: {
 		name: string;
 		code: string;
@@ -744,7 +1119,15 @@ export function MoreContent({
 					pageSize={movementPageSize}
 					totalPages={movementTotalPages}
 					filter={historyFilter}
+					period={historyPeriod}
+					customStartDate={historyCustomStartDate}
+					customEndDate={historyCustomEndDate}
+					searchQuery={historySearchQuery}
 					onChangeFilter={onChangeHistoryFilter}
+					onChangePeriod={onChangeHistoryPeriod}
+					onChangeCustomStartDate={onChangeHistoryCustomStartDate}
+					onChangeCustomEndDate={onChangeHistoryCustomEndDate}
+					onChangeSearchQuery={onChangeHistorySearchQuery}
 					onChangePage={onChangeMovementPage}
 					onChangePageSize={onChangeMovementPageSize}
 				/>
@@ -824,6 +1207,8 @@ export function MoreContent({
 					outletStocks={outletStocks}
 					onSuccess={onNotifySuccess}
 					onError={onNotifyError}
+					analyticsLocationPreset={analyticsLocationPreset}
+					onConsumeAnalyticsLocationPreset={onConsumeAnalyticsLocationPreset}
 				/>
 			) : null}
 		</div>
@@ -1001,7 +1386,15 @@ export function History({
 	pageSize,
 	totalPages,
 	filter,
+	period,
+	customStartDate,
+	customEndDate,
+	searchQuery,
 	onChangeFilter,
+	onChangePeriod,
+	onChangeCustomStartDate,
+	onChangeCustomEndDate,
+	onChangeSearchQuery,
 	onChangePage,
 	onChangePageSize,
 }: {
@@ -1013,7 +1406,15 @@ export function History({
 	pageSize: PageSize;
 	totalPages: number;
 	filter: HistoryFilter;
+	period: HistoryPeriod;
+	customStartDate: string;
+	customEndDate: string;
+	searchQuery: string;
 	onChangeFilter: (filter: HistoryFilter) => void;
+	onChangePeriod: (period: HistoryPeriod) => void;
+	onChangeCustomStartDate: (value: string) => void;
+	onChangeCustomEndDate: (value: string) => void;
+	onChangeSearchQuery: (value: string) => void;
 	onChangePage: (page: number) => void;
 	onChangePageSize: (size: PageSize) => void;
 }) {
@@ -1023,6 +1424,12 @@ export function History({
 		{ key: 'out', label: 'Keluar' },
 		{ key: 'opname', label: 'Opname' },
 	];
+	const periodFilters: Array<{ key: HistoryPeriod; label: string }> = [
+		{ key: 'today', label: 'Hari Ini' },
+		{ key: 'last7days', label: '7 Hari' },
+		{ key: 'last30days', label: '30 Hari' },
+		{ key: 'custom', label: 'Custom' },
+	];
 
 	return (
 		<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1030,7 +1437,7 @@ export function History({
 				Riwayat Pergerakan Stok
 			</h2>
 			<p className="mt-1 text-sm text-slate-500">
-				Filter berdasarkan tipe transaksi dan pantau lokasi sumber transaksinya.
+				Filter berdasarkan tipe transaksi, periode, dan rentang tanggal custom.
 			</p>
 
 			<div className="mt-4 flex flex-wrap gap-2">
@@ -1050,9 +1457,71 @@ export function History({
 				))}
 			</div>
 
+			<div className="mt-4 flex flex-wrap gap-2">
+				{periodFilters.map((item) => (
+					<button
+						key={item.key}
+						type="button"
+						onClick={() => onChangePeriod(item.key)}
+						className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+							period === item.key
+								? 'bg-violet-600 text-white'
+								: 'bg-violet-50 text-violet-700'
+						}`}
+					>
+						{item.label}
+					</button>
+				))}
+			</div>
+
+			{period === 'custom' ? (
+				<div className="mt-4 grid gap-3 sm:grid-cols-2">
+					<label>
+						<span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+							Tanggal Mulai
+						</span>
+						<input
+							type="date"
+							value={customStartDate}
+							onChange={(event) => onChangeCustomStartDate(event.target.value)}
+							className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+						/>
+					</label>
+
+					<label>
+						<span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+							Tanggal Akhir
+						</span>
+						<input
+							type="date"
+							value={customEndDate}
+							onChange={(event) => onChangeCustomEndDate(event.target.value)}
+							className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+						/>
+					</label>
+				</div>
+			) : null}
+
+			<label className="mt-4 block">
+				<span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+					Cari Produk
+				</span>
+				<input
+					type="search"
+					value={searchQuery}
+					onChange={(event) => onChangeSearchQuery(event.target.value)}
+					placeholder="Cari nama produk / SKU"
+					className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+				/>
+			</label>
+
 			{movements.length === 0 ? (
 				<p className="mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-					Tidak ada data riwayat untuk filter ini.
+					{searchQuery.trim()
+						? 'Produk tidak ditemukan untuk filter yang dipilih.'
+						: period === 'custom'
+							? 'Tidak ada data riwayat pada rentang tanggal custom.'
+							: 'Tidak ada data riwayat untuk filter ini.'}
 				</p>
 			) : (
 				<ul className="mt-5 space-y-3">
@@ -1119,6 +1588,8 @@ export function StockAnalyticsModule({
 	outlets,
 	outletStocks,
 	movements,
+	locationPreset,
+	onConsumeLocationPreset,
 }: {
 	products: Product[];
 	categories: Category[];
@@ -1127,6 +1598,8 @@ export function StockAnalyticsModule({
 	outlets: Outlet[];
 	outletStocks: OutletStockRecord[];
 	movements: Movement[];
+	locationPreset?: LocationFilter | null;
+	onConsumeLocationPreset?: () => void;
 }) {
 	const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
 	const [period, setPeriod] = useState<AnalyticsPeriod>('last30days');
@@ -1165,11 +1638,14 @@ export function StockAnalyticsModule({
 		);
 	}, [outletStocks]);
 	const outletTotalByProductId = useMemo(() => {
-		return outletStocks.reduce<Record<string, number>>((accumulator, record) => {
-			accumulator[record.productId] =
-				(accumulator[record.productId] ?? 0) + record.qty;
-			return accumulator;
-		}, {});
+		return outletStocks.reduce<Record<string, number>>(
+			(accumulator, record) => {
+				accumulator[record.productId] =
+					(accumulator[record.productId] ?? 0) + record.qty;
+				return accumulator;
+			},
+			{},
+		);
 	}, [outletStocks]);
 
 	const trendData = useMemo(() => {
@@ -1328,6 +1804,14 @@ export function StockAnalyticsModule({
 
 	const locationLabel = getLocationFilterLabel(locationFilter, outlets);
 
+	useEffect(() => {
+		if (!locationPreset) {
+			return;
+		}
+		setLocationFilter(locationPreset);
+		onConsumeLocationPreset?.();
+	}, [locationPreset, onConsumeLocationPreset]);
+
 	return (
 		<div className="space-y-4">
 			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1418,7 +1902,6 @@ export function StockAnalyticsModule({
 					</table>
 				</div>
 			</div>
-
 		</div>
 	);
 }
@@ -1601,23 +2084,49 @@ export function ExportStockModule({
 
 export function ProductDataReportModule({
 	products,
+	categories,
 	unitNameById,
 	categoryNameById,
 	outlets,
 	outletStocks,
 }: {
 	products: Product[];
+	categories: Category[];
 	unitNameById: Record<string, string>;
 	categoryNameById: Record<string, string>;
 	outlets: Outlet[];
 	outletStocks: OutletStockRecord[];
 }) {
 	const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
+	const [categoryFilter, setCategoryFilter] = useState('all');
 	const [productQuery, setProductQuery] = useState('');
 	const locationOptions = useMemo(
 		() => toLocationFilterOptions(outlets),
 		[outlets],
 	);
+	const categoryOptions = useMemo(() => {
+		const usageByCategoryId = products.reduce<Record<string, number>>(
+			(accumulator, product) => {
+				accumulator[product.categoryId] =
+					(accumulator[product.categoryId] ?? 0) + 1;
+				return accumulator;
+			},
+			{},
+		);
+
+		return [
+			{
+				value: 'all',
+				label: 'Semua kategori',
+				description: `${products.length} produk`,
+			},
+			...categories.map((category) => ({
+				value: category.id,
+				label: category.name,
+				description: `${usageByCategoryId[category.id] ?? 0} produk`,
+			})),
+		];
+	}, [categories, products]);
 	const outletStockMap = useMemo(() => {
 		return outletStocks.reduce<Record<string, number>>(
 			(accumulator, record) => {
@@ -1628,11 +2137,14 @@ export function ProductDataReportModule({
 		);
 	}, [outletStocks]);
 	const outletTotalByProductId = useMemo(() => {
-		return outletStocks.reduce<Record<string, number>>((accumulator, record) => {
-			accumulator[record.productId] =
-				(accumulator[record.productId] ?? 0) + record.qty;
-			return accumulator;
-		}, {});
+		return outletStocks.reduce<Record<string, number>>(
+			(accumulator, record) => {
+				accumulator[record.productId] =
+					(accumulator[record.productId] ?? 0) + record.qty;
+				return accumulator;
+			},
+			{},
+		);
 	}, [outletStocks]);
 
 	const reportRows = useMemo(() => {
@@ -1654,6 +2166,7 @@ export function ProductDataReportModule({
 					id: product.id,
 					name: product.name,
 					sku: product.sku,
+					categoryId: product.categoryId,
 					unit: getProductUnitLabel(product, unitNameById),
 					category: categoryNameById[product.categoryId] ?? '-',
 					centralStock: product.stock,
@@ -1672,15 +2185,18 @@ export function ProductDataReportModule({
 	]);
 	const normalizedProductQuery = productQuery.trim().toLocaleLowerCase('id');
 	const filteredReportRows = useMemo(() => {
-		if (!normalizedProductQuery) {
-			return reportRows;
-		}
 		return reportRows.filter((row) => {
+			if (categoryFilter !== 'all' && row.categoryId !== categoryFilter) {
+				return false;
+			}
+			if (!normalizedProductQuery) {
+				return true;
+			}
 			return `${row.name} ${row.sku}`
 				.toLocaleLowerCase('id')
 				.includes(normalizedProductQuery);
 		});
-	}, [normalizedProductQuery, reportRows]);
+	}, [categoryFilter, normalizedProductQuery, reportRows]);
 
 	return (
 		<div className="space-y-4">
@@ -1692,7 +2208,7 @@ export function ProductDataReportModule({
 					Menampilkan stok pusat, stok outlet, dan total gabungan per produk.
 				</p>
 
-				<div className="mt-4 grid gap-3 md:grid-cols-2 md:items-end">
+				<div className="mt-4 grid gap-3 md:grid-cols-3 md:items-end">
 					<SearchableOptionDropdown
 						label="Lokasi"
 						options={locationOptions}
@@ -1701,6 +2217,15 @@ export function ProductDataReportModule({
 						buttonPlaceholder="Pilih lokasi"
 						searchPlaceholder="Cari lokasi..."
 						emptyText="Lokasi tidak ditemukan."
+					/>
+					<SearchableOptionDropdown
+						label="Kategori"
+						options={categoryOptions}
+						value={categoryFilter}
+						onChange={setCategoryFilter}
+						buttonPlaceholder="Semua kategori"
+						searchPlaceholder="Cari kategori..."
+						emptyText="Kategori tidak ditemukan."
 					/>
 
 					<div>
@@ -1722,7 +2247,8 @@ export function ProductDataReportModule({
 				</div>
 
 				<p className="mt-3 text-xs text-slate-500">
-					Menampilkan {filteredReportRows.length} dari {reportRows.length} produk.
+					Menampilkan {filteredReportRows.length} dari {reportRows.length}{' '}
+					produk.
 				</p>
 
 				{filteredReportRows.length === 0 ? (
@@ -1731,7 +2257,9 @@ export function ProductDataReportModule({
 					</div>
 				) : null}
 
-				<div className={`mt-4 space-y-3 md:hidden ${filteredReportRows.length === 0 ? 'hidden' : ''}`}>
+				<div
+					className={`mt-4 space-y-3 md:hidden ${filteredReportRows.length === 0 ? 'hidden' : ''}`}
+				>
 					{filteredReportRows.map((row) => (
 						<article
 							key={row.id}
@@ -1781,7 +2309,9 @@ export function ProductDataReportModule({
 					))}
 				</div>
 
-				<div className={`mt-4 hidden md:block ${filteredReportRows.length === 0 ? 'md:hidden' : ''}`}>
+				<div
+					className={`mt-4 hidden md:block ${filteredReportRows.length === 0 ? 'md:hidden' : ''}`}
+				>
 					<table className="w-full table-fixed text-left text-sm">
 						<thead>
 							<tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
@@ -1837,6 +2367,8 @@ export function ReportModule({
 	outletStocks,
 	onSuccess,
 	onError,
+	analyticsLocationPreset,
+	onConsumeAnalyticsLocationPreset,
 }: {
 	activeTab: ReportTab;
 	onChangeTab: (tab: ReportTab) => void;
@@ -1849,18 +2381,21 @@ export function ReportModule({
 	outletStocks: OutletStockRecord[];
 	onSuccess: (message: string) => void;
 	onError: (message: string) => void;
+	analyticsLocationPreset?: LocationFilter | null;
+	onConsumeAnalyticsLocationPreset?: () => void;
 }) {
-	const tabs: Array<{ key: ReportTab; label: string }> =
-		[
-			{ key: 'analytics', label: 'Analitik Stok' },
-			{ key: 'export', label: 'Ekspor Data' },
-			{ key: 'item-report', label: 'Laporan Data Barang' },
-		];
+	const tabs: Array<{ key: ReportTab; label: string }> = [
+		{ key: 'analytics', label: 'Analitik Stok' },
+		{ key: 'export', label: 'Ekspor Data' },
+		{ key: 'item-report', label: 'Data Barang' },
+	];
 
 	return (
 		<div className="space-y-4">
 			<div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-				<p className="text-xs uppercase tracking-wide text-slate-500">Laporan</p>
+				<p className="text-xs uppercase tracking-wide text-slate-500">
+					Laporan
+				</p>
 				<div className="mt-2 flex flex-wrap gap-2">
 					{tabs.map((tab) => (
 						<button
@@ -1888,6 +2423,8 @@ export function ReportModule({
 					outlets={outlets}
 					outletStocks={outletStocks}
 					movements={movements}
+					locationPreset={analyticsLocationPreset}
+					onConsumeLocationPreset={onConsumeAnalyticsLocationPreset}
 				/>
 			) : null}
 
@@ -1906,6 +2443,7 @@ export function ReportModule({
 			{activeTab === 'item-report' ? (
 				<ProductDataReportModule
 					products={products}
+					categories={categories}
 					unitNameById={unitNameById}
 					categoryNameById={categoryNameById}
 					outlets={outlets}
@@ -2015,6 +2553,15 @@ export function ManageProducts({
 			})),
 		],
 		[categories, categoryUsageCount, products.length],
+	);
+	const categorySelectOptions = useMemo(
+		() =>
+			categories.map((category) => ({
+				value: category.id,
+				label: category.name,
+				description: `${categoryUsageCount[category.id] ?? 0} produk`,
+			})),
+		[categories, categoryUsageCount],
 	);
 
 	useEffect(() => {
@@ -2178,16 +2725,19 @@ export function ManageProducts({
 							{newNameError}
 						</p>
 					) : null}
-					<div className="space-y-1 text-sm text-slate-700">
-						<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-							Kategori
-						</span>
-						<CategorySelectDropdown
-							categories={categories}
-							value={newCategoryId}
-							onChange={setNewCategoryId}
-						/>
-					</div>
+						<div className="space-y-1 text-sm text-slate-700">
+							<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+								Kategori
+							</span>
+							<SearchableOptionDropdown
+								options={categorySelectOptions}
+								value={newCategoryId}
+								onChange={setNewCategoryId}
+								buttonPlaceholder="Pilih kategori"
+								searchPlaceholder="Cari kategori..."
+								emptyText="Kategori tidak ditemukan."
+							/>
+						</div>
 					<div className="space-y-1 text-sm text-slate-700">
 						<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
 							Satuan
@@ -2261,26 +2811,31 @@ export function ManageProducts({
 					<h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
 						Daftar Produk
 					</h3>
-					<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-						<input
-							value={productQuery}
+						<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+							<input
+								value={productQuery}
 							onChange={(event) => {
 								setProductQuery(event.target.value);
 								onChangePage(1);
 							}}
-							placeholder="Cari nama produk / SKU"
-							className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 sm:w-64"
-						/>
-						<CategoryFilterDropdown
-							value={categoryFilter}
-							options={categoryFilterOptions}
-							onChange={(next) => {
-								setCategoryFilter(next);
-								onChangePage(1);
-							}}
-						/>
+								placeholder="Cari nama produk / SKU"
+								className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 sm:w-64"
+							/>
+							<div className="w-full sm:w-56">
+								<SearchableOptionDropdown
+									options={categoryFilterOptions}
+									value={categoryFilter}
+									onChange={(next) => {
+										setCategoryFilter(next);
+										onChangePage(1);
+									}}
+									buttonPlaceholder="Semua kategori"
+									searchPlaceholder="Cari kategori..."
+									emptyText="Kategori tidak ditemukan."
+								/>
+							</div>
+						</div>
 					</div>
-				</div>
 
 				{pagedProducts.length === 0 ? (
 					<p className="mt-4 text-sm text-slate-500">
@@ -2355,17 +2910,19 @@ export function ManageProducts({
 													{editingNameError}
 												</p>
 											) : null}
-											<div className="space-y-1 text-sm text-slate-700">
-												<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-													Kategori
-												</span>
-												<CategorySelectDropdown
-													categories={categories}
-													value={editingCategoryId}
-													onChange={setEditingCategoryId}
-													compact
-												/>
-											</div>
+												<div className="space-y-1 text-sm text-slate-700">
+													<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+														Kategori
+													</span>
+													<SearchableOptionDropdown
+														options={categorySelectOptions}
+														value={editingCategoryId}
+														onChange={setEditingCategoryId}
+														buttonPlaceholder="Pilih kategori"
+														searchPlaceholder="Cari kategori..."
+														emptyText="Kategori tidak ditemukan."
+													/>
+												</div>
 											<div className="space-y-1 text-sm text-slate-700">
 												<span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
 													Satuan
@@ -2890,11 +3447,17 @@ export function OutletManager({
 		}
 
 		const activeCountByOutletId: Record<string, number> = {};
-		for (const [outletId, productSet] of Object.entries(activeProductIdsByOutletId)) {
+		for (const [outletId, productSet] of Object.entries(
+			activeProductIdsByOutletId,
+		)) {
 			activeCountByOutletId[outletId] = productSet.size;
 		}
 
-		return { totalByOutletId, activeCountByOutletId, activeProductIdsByOutletId };
+		return {
+			totalByOutletId,
+			activeCountByOutletId,
+			activeProductIdsByOutletId,
+		};
 	}, [outletStocks]);
 
 	const clearForm = () => {
@@ -3684,7 +4247,8 @@ export function StockOpnameForm({
 			<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
 				<h2 className="text-lg font-semibold text-slate-900">Stok Opname</h2>
 				<p className="mt-1 text-sm text-slate-500">
-					Pilih lokasi dan produk, lalu lanjutkan input stok fisik di popup.
+					Pilih lokasi pusat atau cabang/outlet dan produk, lalu lanjutkan
+					input stok fisik di popup.
 				</p>
 
 				<div className="mt-4 space-y-3">
@@ -4659,7 +5223,10 @@ export function OpnameInputModal({
 
 	const delta = actualStock - currentStock;
 	const increaseActualStock = (step: number) => {
-		const nextStock = Math.max(0, parseIntegerInput(actualStockInput, 0) + step);
+		const nextStock = Math.max(
+			0,
+			parseIntegerInput(actualStockInput, 0) + step,
+		);
 		setActualStockInput(`${nextStock}`);
 	};
 	const decreaseActualStock = () => {

@@ -5,9 +5,16 @@ Aplikasi manajemen stok untuk gudang pusat dan outlet, dengan fokus pada alur op
 ## Fitur Saat Ini
 
 ### 1) Dashboard
-- Ringkasan jumlah produk, jumlah outlet, total stok.
-- Rekap total transaksi masuk, keluar, dan jumlah kejadian opname.
-- Daftar stok produk pusat dengan penanda stok rendah.
+- Filter global dashboard berdasarkan lokasi (`Semua`, `Pusat`, `Outlet`) dan periode (`Hari Ini`, `7 Hari`, `30 Hari`).
+- Quick action operasional: `Stok Masuk`, `Stok Keluar`, `Transfer`, `Opname`.
+- KPI operasional berbasis filter aktif: stok scope, masuk, keluar, net, event opname, dan jumlah produk dengan stok rendah.
+- Alert prioritas:
+  - Produk stok rendah teratas (berdasarkan selisih ke stok minimum).
+  - Produk tanpa aktivitas 30 hari terakhir.
+- Feed aktivitas terkini gabungan movement + transfer (deep-link ke modul terkait).
+- Insight distribusi:
+  - Top produk aktif pada periode terpilih.
+  - Ringkasan stok dan aktivitas per outlet (deep-link ke analitik laporan).
 
 ### 2) Stok Masuk
 - Input stok masuk untuk lokasi pusat.

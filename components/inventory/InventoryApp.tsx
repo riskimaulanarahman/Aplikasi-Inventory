@@ -42,6 +42,8 @@ import {
 import { PAGE_TONE_STYLES } from '@/components/inventory/constants';
 import {
 	HistoryFilter,
+	HistoryPeriod,
+	LocationFilter,
 	MasterTab,
 	MoreTab,
 	PageSize,
@@ -63,6 +65,68 @@ const DEFAULT_TAB: TabKey = 'dashboard';
 const DEFAULT_MORE_TAB: MoreTab = 'history';
 const DEFAULT_MASTER_TAB: MasterTab = 'products';
 const DEFAULT_REPORT_TAB: ReportTab = 'analytics';
+const DEFAULT_HISTORY_PERIOD: HistoryPeriod = 'last7days';
+
+function toDateInputValue(date: Date) {
+	const year = date.getFullYear();
+	const month = `${date.getMonth() + 1}`.padStart(2, '0');
+	const day = `${date.getDate()}`.padStart(2, '0');
+	return `${year}-${month}-${day}`;
+}
+
+function parseDateInputToParts(value: string) {
+	const parts = value.split('-');
+	if (parts.length !== 3) {
+		return null;
+	}
+
+	const year = Number(parts[0]);
+	const month = Number(parts[1]);
+	const day = Number(parts[2]);
+
+	if (
+		!Number.isInteger(year) ||
+		!Number.isInteger(month) ||
+		!Number.isInteger(day)
+	) {
+		return null;
+	}
+
+	const date = new Date(year, month - 1, day);
+	if (
+		date.getFullYear() !== year ||
+		date.getMonth() !== month - 1 ||
+		date.getDate() !== day
+	) {
+		return null;
+	}
+
+	return { year, month, day };
+}
+
+function parseDateInputToStartMs(value: string) {
+	const parsed = parseDateInputToParts(value);
+	if (!parsed) {
+		return null;
+	}
+	return new Date(parsed.year, parsed.month - 1, parsed.day, 0, 0, 0, 0).getTime();
+}
+
+function parseDateInputToEndMs(value: string) {
+	const parsed = parseDateInputToParts(value);
+	if (!parsed) {
+		return null;
+	}
+	return new Date(
+		parsed.year,
+		parsed.month - 1,
+		parsed.day,
+		23,
+		59,
+		59,
+		999,
+	).getTime();
+}
 
 interface NavigationState {
 	tab: TabKey;
@@ -221,7 +285,18 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	const [activeReportTab, setActiveReportTab] = useState<ReportTab>(
 		initialNavigation?.reportTab ?? DEFAULT_REPORT_TAB,
 	);
+	const [analyticsLocationPreset, setAnalyticsLocationPreset] =
+		useState<LocationFilter | null>(null);
 	const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+	const [historySearchQuery, setHistorySearchQuery] = useState('');
+	const [historyPeriod, setHistoryPeriod] =
+		useState<HistoryPeriod>(DEFAULT_HISTORY_PERIOD);
+	const [historyCustomStartDate, setHistoryCustomStartDate] = useState(() =>
+		toDateInputValue(new Date()),
+	);
+	const [historyCustomEndDate, setHistoryCustomEndDate] = useState(() =>
+		toDateInputValue(new Date()),
+	);
 	const [error, setError] = useState('');
 	const [toast, setToast] = useState<ToastState | null>(null);
 	const [eventPulse, setEventPulse] = useState(false);
@@ -260,52 +335,80 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 			return accumulator;
 		}, {});
 	}, [units]);
-
-	const totalStokPusat = useMemo(
-		() => products.reduce((sum, product) => sum + product.stock, 0),
-		[products],
-	);
-	const totalStokOutlet = useMemo(
-		() => outletStocks.reduce((sum, record) => sum + record.qty, 0),
-		[outletStocks],
-	);
-	const totalStok = totalStokPusat + totalStokOutlet;
-
-	const lowStockCount = useMemo(
-		() =>
-			products.filter(
-				(product) => product.stock <= product.minimumLowStock,
-			).length,
-		[products],
-	);
-
-	const totalStockIn = useMemo(
-		() =>
-			movements
-				.filter((movement) => movement.type === 'in')
-				.reduce((sum, movement) => sum + movement.qty, 0),
-		[movements],
-	);
-
-	const totalStockOut = useMemo(
-		() =>
-			movements
-				.filter((movement) => movement.type === 'out')
-				.reduce((sum, movement) => sum + movement.qty, 0),
-		[movements],
-	);
-
-	const opnameEvents = useMemo(
-		() => movements.filter((movement) => movement.type === 'opname').length,
-		[movements],
-	);
+	const productSkuById = useMemo(() => {
+		return products.reduce<Record<string, string>>((accumulator, product) => {
+			accumulator[product.id] = product.sku;
+			return accumulator;
+		}, {});
+	}, [products]);
 
 	const filteredMovements = useMemo(() => {
-		if (historyFilter === 'all') {
-			return movements;
+		const normalizedHistorySearchQuery = historySearchQuery
+			.trim()
+			.toLocaleLowerCase('id');
+		const now = new Date();
+		const nowMs = now.getTime();
+		const startOfTodayMs = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate(),
+			0,
+			0,
+			0,
+			0,
+		).getTime();
+
+		let startMs = Number.NEGATIVE_INFINITY;
+		let endMs = nowMs;
+
+		if (historyPeriod === 'today') {
+			startMs = startOfTodayMs;
+		} else if (historyPeriod === 'last7days') {
+			startMs = startOfTodayMs - 6 * 24 * 60 * 60 * 1000;
+		} else if (historyPeriod === 'last30days') {
+			startMs = startOfTodayMs - 29 * 24 * 60 * 60 * 1000;
+		} else {
+			const customStartMs = parseDateInputToStartMs(historyCustomStartDate);
+			const customEndMs = parseDateInputToEndMs(historyCustomEndDate);
+			startMs = customStartMs ?? Number.NEGATIVE_INFINITY;
+			endMs = customEndMs ?? Number.POSITIVE_INFINITY;
+
+			if (startMs > endMs) {
+				const swappedStartMs = endMs;
+				endMs = startMs;
+				startMs = swappedStartMs;
+			}
 		}
-		return movements.filter((movement) => movement.type === historyFilter);
-	}, [historyFilter, movements]);
+
+		return movements.filter((movement) => {
+			if (historyFilter !== 'all' && movement.type !== historyFilter) {
+				return false;
+			}
+
+			if (normalizedHistorySearchQuery) {
+				const searchableText = `${movement.productName} ${productSkuById[movement.productId] ?? ''}`
+					.toLocaleLowerCase('id');
+				if (!searchableText.includes(normalizedHistorySearchQuery)) {
+					return false;
+				}
+			}
+
+			const createdAtMs = new Date(movement.createdAt).getTime();
+			if (!Number.isFinite(createdAtMs)) {
+				return false;
+			}
+
+			return createdAtMs >= startMs && createdAtMs <= endMs;
+		});
+	}, [
+			historyCustomEndDate,
+			historyCustomStartDate,
+			historyFilter,
+			historyPeriod,
+			movements,
+			productSkuById,
+			historySearchQuery,
+		]);
 
 	const historyTotalPages = Math.max(
 		1,
@@ -416,7 +519,14 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 
 	useEffect(() => {
 		setHistoryPage(1);
-	}, [historyFilter, historyPageSize]);
+	}, [
+		historyCustomEndDate,
+		historyCustomStartDate,
+		historyFilter,
+		historySearchQuery,
+		historyPageSize,
+		historyPeriod,
+	]);
 
 	useEffect(() => {
 		if (historyPage > historyTotalPages) {
@@ -531,6 +641,21 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		});
 	};
 
+	const openReportFromDashboard = (
+		reportTab: ReportTab = 'analytics',
+		locationFilter?: LocationFilter,
+	) => {
+		setError('');
+		setIsMoreMenuOpen(false);
+		setIsProfileMenuOpen(false);
+		setAnalyticsLocationPreset(locationFilter ?? null);
+		startTransition(() => {
+			setActiveTab('more');
+			setActiveMoreTab('report');
+			setActiveReportTab(reportTab);
+		});
+	};
+
 	const handleProfileClick = () => {
 		setIsProfileMenuOpen(false);
 		markSuccess('Fitur profil akan segera tersedia.');
@@ -628,7 +753,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		}
 
 		if (location.kind === 'outlet' && !location.outletId) {
-			markError('Outlet harus dipilih.');
+			markError('Cabang/Outlet harus dipilih.');
 			return false;
 		}
 
@@ -671,7 +796,6 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		});
 
 		bumpUsage(location, productId);
-		openMore('history');
 		markSuccess(
 			type === 'in'
 				? 'Transaksi stok masuk berhasil disimpan.'
@@ -705,7 +829,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		}
 
 		if (location.kind === 'outlet' && !location.outletId) {
-			markError('Outlet harus dipilih.');
+			markError('Cabang/Outlet harus dipilih.');
 			return false;
 		}
 
@@ -742,7 +866,6 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		});
 
 		bumpUsage(location, productId);
-		openMore('history');
 
 		if (delta === 0) {
 			markSuccess('Opname tersimpan. Tidak ada perubahan stok.');
@@ -1522,22 +1645,20 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 				) : null}
 
 				<div>
-					{activeTab === 'dashboard' ? (
-						<Dashboard
-							totalProducts={products.length}
-							totalOutlets={outlets.length}
-							totalStok={totalStok}
-							totalStokPusat={totalStokPusat}
-							totalStokOutlet={totalStokOutlet}
-							lowStockCount={lowStockCount}
-							totalStockIn={totalStockIn}
-							totalStockOut={totalStockOut}
-							opnameEvents={opnameEvents}
-							products={products}
-							categoryNameById={categoryNameById}
-							unitNameById={unitNameById}
-						/>
-					) : null}
+						{activeTab === 'dashboard' ? (
+							<Dashboard
+								products={products}
+								movements={movements}
+								transfers={transfers}
+								outlets={outlets}
+								outletStocks={outletStocks}
+								categoryNameById={categoryNameById}
+								unitNameById={unitNameById}
+								onOpenTransfer={() => selectMoreDialogItem('transfer')}
+								onOpenHistory={() => selectMoreDialogItem('history')}
+								onOpenReport={openReportFromDashboard}
+							/>
+						) : null}
 
 					{activeTab === 'in' ? (
 						<MovementForm
@@ -1578,12 +1699,20 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							movements={pagedMovements}
 							movementTotal={filteredMovements.length}
 							movementPage={Math.min(historyPage, historyTotalPages)}
-							movementPageSize={historyPageSize}
-							movementTotalPages={historyTotalPages}
-							historyFilter={historyFilter}
-							activeMasterTab={activeMasterTab}
-							onChangeHistoryFilter={setHistoryFilter}
-							onChangeMasterTab={handleMasterTabChange}
+								movementPageSize={historyPageSize}
+								movementTotalPages={historyTotalPages}
+								historyFilter={historyFilter}
+								historyPeriod={historyPeriod}
+								historyCustomStartDate={historyCustomStartDate}
+								historyCustomEndDate={historyCustomEndDate}
+								historySearchQuery={historySearchQuery}
+								activeMasterTab={activeMasterTab}
+								onChangeHistoryFilter={setHistoryFilter}
+								onChangeHistoryPeriod={setHistoryPeriod}
+								onChangeHistoryCustomStartDate={setHistoryCustomStartDate}
+								onChangeHistoryCustomEndDate={setHistoryCustomEndDate}
+								onChangeHistorySearchQuery={setHistorySearchQuery}
+								onChangeMasterTab={handleMasterTabChange}
 							activeReportTab={activeReportTab}
 							onChangeReportTab={handleReportTabChange}
 							onChangeMovementPage={setHistoryPage}
@@ -1617,10 +1746,14 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							transferPageSize={transferPageSize}
 							transferTotalPages={transferTotalPages}
 							onChangeTransferPage={setTransferPage}
-							onChangeTransferPageSize={setTransferPageSize}
-							onCreateOutlet={handleCreateOutlet}
-							onUpdateOutlet={handleUpdateOutlet}
-							onDeleteOutlet={handleDeleteOutlet}
+								onChangeTransferPageSize={setTransferPageSize}
+								analyticsLocationPreset={analyticsLocationPreset}
+								onConsumeAnalyticsLocationPreset={() =>
+									setAnalyticsLocationPreset(null)
+								}
+								onCreateOutlet={handleCreateOutlet}
+								onUpdateOutlet={handleUpdateOutlet}
+								onDeleteOutlet={handleDeleteOutlet}
 							onSubmitTransfer={handleTransferProduct}
 							onSubmitOpname={handleOpname}
 							onNotifySuccess={markSuccess}
