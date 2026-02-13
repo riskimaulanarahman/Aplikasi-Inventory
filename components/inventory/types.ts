@@ -10,6 +10,7 @@ export type MoreTab =
   | 'opname'
   | 'report';
 export type MasterTab = 'products' | 'categories' | 'units' | 'outlets';
+export type ReportTab = 'analytics' | 'export' | 'item-report';
 export type HistoryFilter = 'all' | MovementType;
 export type ToastTone = 'success' | 'error';
 export type PageSize = 5 | 10 | 20;

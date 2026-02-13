@@ -28,6 +28,7 @@ import {
 	MoreTab,
 	PageSize,
 	PageTone,
+	ReportTab,
 	TabKey,
 	ToastTone,
 } from '@/components/inventory/types';
@@ -540,9 +541,11 @@ export function MovementForm({
 export function MoreContent({
 	activeTab,
 	activeMasterTab,
+	activeReportTab,
 	tone,
 	onChangeTab,
 	onChangeMasterTab,
+	onChangeReportTab,
 	onOpenMenu,
 	movements,
 	movementTotal,
@@ -594,9 +597,11 @@ export function MoreContent({
 }: {
 	activeTab: MoreTab;
 	activeMasterTab: MasterTab;
+	activeReportTab: ReportTab;
 	tone: PageTone;
 	onChangeTab: (tab: MoreTab) => void;
 	onChangeMasterTab: (tab: MasterTab) => void;
+	onChangeReportTab: (tab: ReportTab) => void;
 	onOpenMenu: () => void;
 	movements: Movement[];
 	movementTotal: number;
@@ -808,6 +813,8 @@ export function MoreContent({
 
 			{activeTab === 'report' ? (
 				<ReportModule
+					activeTab={activeReportTab}
+					onChangeTab={onChangeReportTab}
 					products={products}
 					categories={categories}
 					movements={movements}
@@ -1818,6 +1825,8 @@ export function ProductDataReportModule({
 }
 
 export function ReportModule({
+	activeTab,
+	onChangeTab,
 	products,
 	categories,
 	movements,
@@ -1828,6 +1837,8 @@ export function ReportModule({
 	onSuccess,
 	onError,
 }: {
+	activeTab: ReportTab;
+	onChangeTab: (tab: ReportTab) => void;
 	products: Product[];
 	categories: Category[];
 	movements: Movement[];
@@ -1838,10 +1849,7 @@ export function ReportModule({
 	onSuccess: (message: string) => void;
 	onError: (message: string) => void;
 }) {
-	const [activeReportTab, setActiveReportTab] = useState<
-		'analytics' | 'export' | 'item-report'
-	>('analytics');
-	const tabs: Array<{ key: 'analytics' | 'export' | 'item-report'; label: string }> =
+	const tabs: Array<{ key: ReportTab; label: string }> =
 		[
 			{ key: 'analytics', label: 'Analitik Stok' },
 			{ key: 'export', label: 'Ekspor Data' },
@@ -1857,9 +1865,9 @@ export function ReportModule({
 						<button
 							key={tab.key}
 							type="button"
-							onClick={() => setActiveReportTab(tab.key)}
+							onClick={() => onChangeTab(tab.key)}
 							className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-								activeReportTab === tab.key
+								activeTab === tab.key
 									? 'bg-slate-900 text-white'
 									: 'bg-slate-100 text-slate-600'
 							}`}
@@ -1870,7 +1878,7 @@ export function ReportModule({
 				</div>
 			</div>
 
-			{activeReportTab === 'analytics' ? (
+			{activeTab === 'analytics' ? (
 				<StockAnalyticsModule
 					products={products}
 					categories={categories}
@@ -1882,7 +1890,7 @@ export function ReportModule({
 				/>
 			) : null}
 
-			{activeReportTab === 'export' ? (
+			{activeTab === 'export' ? (
 				<ExportStockModule
 					products={products}
 					unitNameById={unitNameById}
@@ -1894,7 +1902,7 @@ export function ReportModule({
 				/>
 			) : null}
 
-			{activeReportTab === 'item-report' ? (
+			{activeTab === 'item-report' ? (
 				<ProductDataReportModule
 					products={products}
 					unitNameById={unitNameById}

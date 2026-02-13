@@ -39,6 +39,7 @@ import {
 	MoreTab,
 	PageSize,
 	PageTone,
+	ReportTab,
 	TabKey,
 	ToastState,
 	ToastTone,
@@ -47,7 +48,151 @@ import { getLocationLabel, toLocationKey } from '@/components/inventory/utils/lo
 import { buildInitialUsage } from '@/components/inventory/utils/product';
 import { getOutletStock, upsertOutletStock } from '@/components/inventory/utils/stock';
 
-export default function InventoryApp() {
+const TAB_QUERY_KEY = 'tab';
+const MORE_TAB_QUERY_KEY = 'moreTab';
+const MASTER_TAB_QUERY_KEY = 'masterTab';
+const REPORT_TAB_QUERY_KEY = 'reportTab';
+const DEFAULT_TAB: TabKey = 'dashboard';
+const DEFAULT_MORE_TAB: MoreTab = 'history';
+const DEFAULT_MASTER_TAB: MasterTab = 'products';
+const DEFAULT_REPORT_TAB: ReportTab = 'analytics';
+
+interface NavigationState {
+	tab: TabKey;
+	moreTab: MoreTab;
+	masterTab: MasterTab;
+	reportTab: ReportTab;
+}
+
+interface InventoryAppProps {
+	initialNavigation?: NavigationState;
+}
+
+function isValidTabKey(value: string | null): value is TabKey {
+	return value === 'dashboard' || value === 'in' || value === 'out' || value === 'more';
+}
+
+function isValidMoreTab(value: string | null): value is MoreTab {
+	return (
+		value === 'history' ||
+		value === 'master' ||
+		value === 'transfer' ||
+		value === 'opname' ||
+		value === 'report'
+	);
+}
+
+function isValidMasterTab(value: string | null): value is MasterTab {
+	return (
+		value === 'products' ||
+		value === 'categories' ||
+		value === 'units' ||
+		value === 'outlets'
+	);
+}
+
+function isValidReportTab(value: string | null): value is ReportTab {
+	return value === 'analytics' || value === 'export' || value === 'item-report';
+}
+
+function resolveNavigationState(search: string): NavigationState {
+	const params = new URLSearchParams(search);
+	const tabParam = params.get(TAB_QUERY_KEY);
+	const moreTabParam = params.get(MORE_TAB_QUERY_KEY);
+	const masterTabParam = params.get(MASTER_TAB_QUERY_KEY);
+	const reportTabParam = params.get(REPORT_TAB_QUERY_KEY);
+
+	const tab = isValidTabKey(tabParam) ? tabParam : DEFAULT_TAB;
+	const moreTab = isValidMoreTab(moreTabParam) ? moreTabParam : DEFAULT_MORE_TAB;
+	const masterTab = isValidMasterTab(masterTabParam)
+		? masterTabParam
+		: DEFAULT_MASTER_TAB;
+	const reportTab = isValidReportTab(reportTabParam)
+		? reportTabParam
+		: DEFAULT_REPORT_TAB;
+
+	return {
+		tab,
+		moreTab,
+		masterTab,
+		reportTab,
+	};
+}
+
+function isNormalizedNavigation(search: string, state: NavigationState): boolean {
+	const params = new URLSearchParams(search);
+
+	const currentTab = params.get(TAB_QUERY_KEY);
+	if (state.tab === DEFAULT_TAB) {
+		if (currentTab !== null) {
+			return false;
+		}
+	} else if (currentTab !== state.tab) {
+		return false;
+	}
+
+	const currentMoreTab = params.get(MORE_TAB_QUERY_KEY);
+	if (state.tab !== 'more' || state.moreTab === DEFAULT_MORE_TAB) {
+		if (currentMoreTab !== null) {
+			return false;
+		}
+	} else if (currentMoreTab !== state.moreTab) {
+		return false;
+	}
+
+	const currentMasterTab = params.get(MASTER_TAB_QUERY_KEY);
+	if (state.tab !== 'more' || state.moreTab !== 'master' || state.masterTab === DEFAULT_MASTER_TAB) {
+		if (currentMasterTab !== null) {
+			return false;
+		}
+	} else if (currentMasterTab !== state.masterTab) {
+		return false;
+	}
+
+	const currentReportTab = params.get(REPORT_TAB_QUERY_KEY);
+	if (state.tab !== 'more' || state.moreTab !== 'report' || state.reportTab === DEFAULT_REPORT_TAB) {
+		if (currentReportTab !== null) {
+			return false;
+		}
+	} else if (currentReportTab !== state.reportTab) {
+		return false;
+	}
+
+	return true;
+}
+
+function buildUrlWithNavigation(state: NavigationState): string {
+	const params = new URLSearchParams(window.location.search);
+
+	if (state.tab === DEFAULT_TAB) {
+		params.delete(TAB_QUERY_KEY);
+	} else {
+		params.set(TAB_QUERY_KEY, state.tab);
+	}
+
+	if (state.tab !== 'more' || state.moreTab === DEFAULT_MORE_TAB) {
+		params.delete(MORE_TAB_QUERY_KEY);
+	} else {
+		params.set(MORE_TAB_QUERY_KEY, state.moreTab);
+	}
+
+	if (state.tab !== 'more' || state.moreTab !== 'master' || state.masterTab === DEFAULT_MASTER_TAB) {
+		params.delete(MASTER_TAB_QUERY_KEY);
+	} else {
+		params.set(MASTER_TAB_QUERY_KEY, state.masterTab);
+	}
+
+	if (state.tab !== 'more' || state.moreTab !== 'report' || state.reportTab === DEFAULT_REPORT_TAB) {
+		params.delete(REPORT_TAB_QUERY_KEY);
+	} else {
+		params.set(REPORT_TAB_QUERY_KEY, state.reportTab);
+	}
+
+	const query = params.toString();
+	return `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+}
+
+export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	const [categories, setCategories] = useState<Category[]>(initialCategories);
 	const [units, setUnits] = useState<Unit[]>(initialUnits);
 	const [products, setProducts] = useState<Product[]>(initialProducts);
@@ -57,9 +202,18 @@ export default function InventoryApp() {
 	const [movements, setMovements] = useState<Movement[]>(initialMovements);
 	const [transfers, setTransfers] =
 		useState<TransferRecord[]>(initialTransfers);
-	const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
-	const [activeMoreTab, setActiveMoreTab] = useState<MoreTab>('history');
-	const [activeMasterTab, setActiveMasterTab] = useState<MasterTab>('products');
+	const [activeTab, setActiveTab] = useState<TabKey>(
+		initialNavigation?.tab ?? DEFAULT_TAB,
+	);
+	const [activeMoreTab, setActiveMoreTab] = useState<MoreTab>(
+		initialNavigation?.moreTab ?? DEFAULT_MORE_TAB,
+	);
+	const [activeMasterTab, setActiveMasterTab] = useState<MasterTab>(
+		initialNavigation?.masterTab ?? DEFAULT_MASTER_TAB,
+	);
+	const [activeReportTab, setActiveReportTab] = useState<ReportTab>(
+		initialNavigation?.reportTab ?? DEFAULT_REPORT_TAB,
+	);
 	const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 	const [error, setError] = useState('');
 	const [toast, setToast] = useState<ToastState | null>(null);
@@ -212,6 +366,45 @@ export default function InventoryApp() {
 
 		return () => window.clearTimeout(timer);
 	}, [eventPulse]);
+
+	useEffect(() => {
+		if (typeof window === 'undefined') {
+			return;
+		}
+
+		const nextUrl = buildUrlWithNavigation({
+			tab: activeTab,
+			moreTab: activeMoreTab,
+			masterTab: activeMasterTab,
+			reportTab: activeReportTab,
+		});
+		const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+		if (nextUrl !== currentUrl) {
+			window.history.replaceState(null, '', nextUrl);
+		}
+	}, [activeMasterTab, activeMoreTab, activeReportTab, activeTab]);
+
+	useEffect(() => {
+		if (typeof window === 'undefined') {
+			return;
+		}
+
+		const handlePopState = () => {
+			const nextState = resolveNavigationState(window.location.search);
+			setActiveTab(nextState.tab);
+			setActiveMoreTab(nextState.moreTab);
+			setActiveMasterTab(nextState.masterTab);
+			setActiveReportTab(nextState.reportTab);
+
+			if (!isNormalizedNavigation(window.location.search, nextState)) {
+				const normalizedUrl = buildUrlWithNavigation(nextState);
+				window.history.replaceState(null, '', normalizedUrl);
+			}
+		};
+
+		window.addEventListener('popstate', handlePopState);
+		return () => window.removeEventListener('popstate', handlePopState);
+	}, []);
 
 	useEffect(() => {
 		setHistoryPage(1);
@@ -1362,6 +1555,8 @@ export default function InventoryApp() {
 							activeMasterTab={activeMasterTab}
 							onChangeHistoryFilter={setHistoryFilter}
 							onChangeMasterTab={setActiveMasterTab}
+							activeReportTab={activeReportTab}
+							onChangeReportTab={setActiveReportTab}
 							onChangeMovementPage={setHistoryPage}
 							onChangeMovementPageSize={setHistoryPageSize}
 							products={products}
