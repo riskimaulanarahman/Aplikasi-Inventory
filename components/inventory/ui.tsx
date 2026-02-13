@@ -1441,6 +1441,7 @@ export function ExportStockModule({
 	onError: (message: string) => void;
 }) {
 	const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
+	const [productQuery, setProductQuery] = useState('');
 	const locationOptions = useMemo(
 		() => toLocationFilterOptions(outlets),
 		[outlets],
@@ -1612,6 +1613,7 @@ export function ProductDataReportModule({
 	outletStocks: OutletStockRecord[];
 }) {
 	const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
+	const [productQuery, setProductQuery] = useState('');
 	const locationOptions = useMemo(
 		() => toLocationFilterOptions(outlets),
 		[outlets],
@@ -1668,6 +1670,17 @@ export function ProductDataReportModule({
 		products,
 		unitNameById,
 	]);
+	const normalizedProductQuery = productQuery.trim().toLocaleLowerCase('id');
+	const filteredReportRows = useMemo(() => {
+		if (!normalizedProductQuery) {
+			return reportRows;
+		}
+		return reportRows.filter((row) => {
+			return `${row.name} ${row.sku}`
+				.toLocaleLowerCase('id')
+				.includes(normalizedProductQuery);
+		});
+	}, [normalizedProductQuery, reportRows]);
 
 	return (
 		<div className="space-y-4">
@@ -1679,7 +1692,7 @@ export function ProductDataReportModule({
 					Menampilkan stok pusat, stok outlet, dan total gabungan per produk.
 				</p>
 
-				<div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+				<div className="mt-4 grid gap-3 md:grid-cols-2 md:items-end">
 					<SearchableOptionDropdown
 						label="Lokasi"
 						options={locationOptions}
@@ -1689,10 +1702,37 @@ export function ProductDataReportModule({
 						searchPlaceholder="Cari lokasi..."
 						emptyText="Lokasi tidak ditemukan."
 					/>
+
+					<div>
+						<label
+							htmlFor="item-report-product-search"
+							className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+						>
+							Cari Produk
+						</label>
+						<input
+							id="item-report-product-search"
+							type="search"
+							value={productQuery}
+							onChange={(event) => setProductQuery(event.target.value)}
+							placeholder="Cari nama produk / SKU"
+							className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+						/>
+					</div>
 				</div>
 
-				<div className="mt-4 space-y-3 md:hidden">
-					{reportRows.map((row) => (
+				<p className="mt-3 text-xs text-slate-500">
+					Menampilkan {filteredReportRows.length} dari {reportRows.length} produk.
+				</p>
+
+				{filteredReportRows.length === 0 ? (
+					<div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+						Produk tidak ditemukan.
+					</div>
+				) : null}
+
+				<div className={`mt-4 space-y-3 md:hidden ${filteredReportRows.length === 0 ? 'hidden' : ''}`}>
+					{filteredReportRows.map((row) => (
 						<article
 							key={row.id}
 							className="rounded-xl border border-slate-200 bg-slate-50 p-3"
@@ -1741,7 +1781,7 @@ export function ProductDataReportModule({
 					))}
 				</div>
 
-				<div className="mt-4 hidden md:block">
+				<div className={`mt-4 hidden md:block ${filteredReportRows.length === 0 ? 'md:hidden' : ''}`}>
 					<table className="w-full table-fixed text-left text-sm">
 						<thead>
 							<tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
@@ -1756,7 +1796,7 @@ export function ProductDataReportModule({
 							</tr>
 						</thead>
 						<tbody>
-							{reportRows.map((row) => (
+							{filteredReportRows.map((row) => (
 								<tr
 									key={row.id}
 									className="border-b border-slate-100 text-slate-700"
