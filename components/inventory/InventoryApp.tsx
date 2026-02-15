@@ -12,25 +12,17 @@ import BottomNav from '@/components/BottomNav';
 import Dashboard from '@/components/inventory/dashboard/Dashboard';
 import DesktopTabs from '@/components/inventory/layout/DesktopTabs';
 import MoreMenuDialog from '@/components/inventory/layout/MoreMenuDialog';
+import ProfileDialog from '@/components/inventory/layout/ProfileDialog';
+import BillingDialog from '@/components/inventory/layout/BillingDialog';
 import ToastMessage from '@/components/inventory/layout/ToastMessage';
 import MovementForm from '@/components/inventory/movement/MovementForm';
 import MoreContent from '@/components/inventory/more/MoreContent';
 import TopBarProfile from '@/components/inventory/layout/TopBarProfile';
 import {
-	initialCategories,
-	initialMovements,
-	initialOutlets,
-	initialOutletStocks,
-	initialProducts,
-	initialTransfers,
-	initialUnits,
-} from '@/lib/mockData';
-import {
 	Category,
 	FavoriteState,
 	LocationKey,
 	Movement,
-	MovementType,
 	Outlet,
 	OutletStockRecord,
 	Product,
@@ -53,9 +45,40 @@ import {
 	ToastState,
 	ToastTone,
 } from '@/components/inventory/types';
-import { getLocationLabel, toLocationKey } from '@/components/inventory/utils/location';
+import { toLocationKey } from '@/components/inventory/utils/location';
 import { buildInitialUsage } from '@/components/inventory/utils/product';
-import { getOutletStock, upsertOutletStock } from '@/components/inventory/utils/stock';
+import { getOutletStock } from '@/components/inventory/utils/stock';
+import { clientApiFetch } from '@/lib/api/client';
+import { changeMyPassword, updateMyProfile } from '@/lib/auth/client';
+import type { CurrentUserSession } from '@/lib/auth/session';
+import { clearClientAuthToken } from '@/lib/auth/token.client';
+import {
+	createCategory,
+	createOutlet,
+	createProduct,
+	createUnit,
+	deleteCategory,
+	deleteOutlet,
+	deleteProduct,
+	deleteUnit,
+	getInventorySnapshot,
+	submitMovement,
+	submitOpname,
+	submitTransfer,
+	updateCategory,
+	updateOutlet,
+	updateProduct,
+	updateUnit,
+} from '@/lib/inventory/client';
+import type { MembershipRole } from '@/lib/tenant/context';
+import {
+	createTenantStaff,
+	deactivateTenantStaff,
+	getTenantStaff,
+	resetTenantStaffPassword,
+	type TenantStaffItem,
+	updateTenantStaff,
+} from '@/lib/tenant/client';
 
 const TAB_QUERY_KEY = 'tab';
 const MORE_TAB_QUERY_KEY = 'moreTab';
@@ -137,6 +160,25 @@ interface NavigationState {
 
 interface InventoryAppProps {
 	initialNavigation?: NavigationState;
+	headerLabel: string;
+	headerTitle: string;
+	tenantSlug: string;
+	membershipRole: MembershipRole;
+	accessibleBranchIds: string[];
+	currentUserSession: CurrentUserSession;
+	isReadOnly?: boolean;
+	subscriptionStatus?: string | null;
+	trialEndAt?: string | null;
+}
+
+function getMembershipRoleLabel(role: MembershipRole): string {
+	if (role === 'tenant_owner') {
+		return 'Owner';
+	}
+	if (role === 'tenant_admin') {
+		return 'Admin';
+	}
+	return 'Staff';
 }
 
 function isValidTabKey(value: string | null): value is TabKey {
@@ -158,7 +200,8 @@ function isValidMasterTab(value: string | null): value is MasterTab {
 		value === 'products' ||
 		value === 'categories' ||
 		value === 'units' ||
-		value === 'outlets'
+		value === 'outlets' ||
+		value === 'staff'
 	);
 }
 
@@ -263,16 +306,44 @@ function buildUrlWithNavigation(state: NavigationState): string {
 	return `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
 }
 
-export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
-	const [categories, setCategories] = useState<Category[]>(initialCategories);
-	const [units, setUnits] = useState<Unit[]>(initialUnits);
-	const [products, setProducts] = useState<Product[]>(initialProducts);
-	const [outlets, setOutlets] = useState<Outlet[]>(initialOutlets);
+export default function InventoryApp({
+	initialNavigation,
+	headerLabel,
+	headerTitle,
+	tenantSlug,
+	membershipRole,
+	accessibleBranchIds,
+	currentUserSession,
+	isReadOnly = false,
+	subscriptionStatus = null,
+	trialEndAt = null,
+}: InventoryAppProps) {
+	const canManageStaff = membershipRole === 'tenant_owner';
+	const [profileDisplayName, setProfileDisplayName] = useState(
+		currentUserSession.profile.displayName?.trim() || currentUserSession.user.name,
+	);
+	const [profilePhone, setProfilePhone] = useState(currentUserSession.profile.phone ?? '');
+	const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+	const [profileFormDisplayName, setProfileFormDisplayName] = useState(profileDisplayName);
+	const [profileFormPhone, setProfileFormPhone] = useState(profilePhone);
+	const [newPassword, setNewPassword] = useState('');
+	const [newPasswordConfirmation, setNewPasswordConfirmation] = useState('');
+	const [isSavingProfile, setIsSavingProfile] = useState(false);
+	const [isChangingPassword, setIsChangingPassword] = useState(false);
+	const [staffMembers, setStaffMembers] = useState<TenantStaffItem[]>([]);
+	const [staffLoading, setStaffLoading] = useState(false);
+	const [staffError, setStaffError] = useState('');
+	const [staffLoaded, setStaffLoaded] = useState(false);
+
+	const [categories, setCategories] = useState<Category[]>([]);
+	const [units, setUnits] = useState<Unit[]>([]);
+	const [products, setProducts] = useState<Product[]>([]);
+	const [outlets, setOutlets] = useState<Outlet[]>([]);
 	const [outletStocks, setOutletStocks] =
-		useState<OutletStockRecord[]>(initialOutletStocks);
-	const [movements, setMovements] = useState<Movement[]>(initialMovements);
+		useState<OutletStockRecord[]>([]);
+	const [movements, setMovements] = useState<Movement[]>([]);
 	const [transfers, setTransfers] =
-		useState<TransferRecord[]>(initialTransfers);
+		useState<TransferRecord[]>([]);
 	const [activeTab, setActiveTab] = useState<TabKey>(
 		initialNavigation?.tab ?? DEFAULT_TAB,
 	);
@@ -302,13 +373,14 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	const [eventPulse, setEventPulse] = useState(false);
 	const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 	const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+	const [isBillingDialogOpen, setIsBillingDialogOpen] = useState(false);
 	const [favoritesByLocation, setFavoritesByLocation] = useState<FavoriteState>(
 		{
 			central: [],
 		},
 	);
 	const [usageByLocation, setUsageByLocation] = useState<UsageState>(
-		buildInitialUsage(initialMovements),
+		buildInitialUsage([]),
 	);
 	const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -341,6 +413,40 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 			return accumulator;
 		}, {});
 	}, [products]);
+
+	const accessibleMovements = useMemo(() => {
+		if (membershipRole !== 'staff') return movements;
+		const hasCentralAccess = outlets.some(
+			(o) => o.code === 'PST' && accessibleBranchIds.includes(o.id),
+		);
+		return movements.filter((m) => {
+			if (m.locationKind === 'central') return hasCentralAccess;
+			return accessibleBranchIds.includes(m.locationId || '');
+		});
+	}, [membershipRole, movements, outlets, accessibleBranchIds]);
+
+	const accessibleOutletStocks = useMemo(() => {
+		if (membershipRole !== 'staff') return outletStocks;
+		return outletStocks.filter((s) => accessibleBranchIds.includes(s.outletId));
+	}, [membershipRole, outletStocks, accessibleBranchIds]);
+
+	const accessibleTransfers = useMemo(() => {
+		if (membershipRole !== 'staff') return transfers;
+		// Staff can see transfers where they are source OR destination
+		// Wait, user says "show only what is assigned to that staff"
+		// If they send FROM central to an outlet they don't own, should they see it?
+		// Usually yes, if they initiated it.
+		// For simplicity, let's filter by source branch access.
+		return transfers.filter((t) => {
+			if (t.sourceKind === 'central') {
+				const hasCentralAccess = outlets.some(
+					(o) => o.code === 'PST' && accessibleBranchIds.includes(o.id),
+				);
+				return hasCentralAccess;
+			}
+			return accessibleBranchIds.includes(t.sourceOutletId || '');
+		});
+	}, [membershipRole, transfers, outlets, accessibleBranchIds]);
 
 	const filteredMovements = useMemo(() => {
 		const normalizedHistorySearchQuery = historySearchQuery
@@ -380,7 +486,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 			}
 		}
 
-		return movements.filter((movement) => {
+		return accessibleMovements.filter((movement) => {
 			if (historyFilter !== 'all' && movement.type !== historyFilter) {
 				return false;
 			}
@@ -423,14 +529,14 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 
 	const transferTotalPages = Math.max(
 		1,
-		Math.ceil(transfers.length / transferPageSize),
+		Math.ceil(accessibleTransfers.length / transferPageSize),
 	);
 
 	const pagedTransfers = useMemo(() => {
 		const safePage = Math.min(transferPage, transferTotalPages);
 		const start = (safePage - 1) * transferPageSize;
-		return transfers.slice(start, start + transferPageSize);
-	}, [transferPage, transferPageSize, transferTotalPages, transfers]);
+		return accessibleTransfers.slice(start, start + transferPageSize);
+	}, [transferPage, transferPageSize, transferTotalPages, accessibleTransfers]);
 
 	const activeTone = useMemo<PageTone>(() => {
 		if (activeTab === 'dashboard') {
@@ -518,6 +624,37 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	}, []);
 
 	useEffect(() => {
+		setStaffMembers([]);
+		setStaffError('');
+		setStaffLoaded(false);
+	}, [tenantSlug]);
+
+	useEffect(() => {
+		const nextDisplayName =
+			currentUserSession.profile.displayName?.trim() || currentUserSession.user.name;
+		const nextPhone = currentUserSession.profile.phone ?? '';
+
+		setProfileDisplayName(nextDisplayName);
+		setProfilePhone(nextPhone);
+		setProfileFormDisplayName(nextDisplayName);
+		setProfileFormPhone(nextPhone);
+	}, [
+		currentUserSession.profile.displayName,
+		currentUserSession.profile.phone,
+		currentUserSession.user.name,
+	]);
+
+	useEffect(() => {
+		if (canManageStaff) {
+			return;
+		}
+
+		if (activeTab === 'more' && activeMoreTab === 'master' && activeMasterTab === 'staff') {
+			setActiveMasterTab('products');
+		}
+	}, [activeMasterTab, activeMoreTab, activeTab, canManageStaff]);
+
+	useEffect(() => {
 		setHistoryPage(1);
 	}, [
 		historyCustomEndDate,
@@ -591,6 +728,16 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		setEventPulse(true);
 	};
 
+	const ensureWritable = () => {
+		if (!isReadOnly) {
+			return true;
+		}
+		markError(
+			'Mode read-only aktif. Trial/langganan belum aktif, aksi perubahan data diblokir.',
+		);
+		return false;
+	};
+
 	const openMore = (tab: MoreTab) => {
 		startTransition(() => {
 			setActiveTab('more');
@@ -630,6 +777,13 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 	};
 
 	const handleMasterTabChange = (tab: MasterTab) => {
+		if (tab === 'staff' && !canManageStaff) {
+			startTransition(() => {
+				setActiveMasterTab('products');
+			});
+			return;
+		}
+
 		startTransition(() => {
 			setActiveMasterTab(tab);
 		});
@@ -658,23 +812,25 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 
 	const handleProfileClick = () => {
 		setIsProfileMenuOpen(false);
-		markSuccess('Fitur profil akan segera tersedia.');
+		setProfileFormDisplayName(profileDisplayName);
+		setProfileFormPhone(profilePhone);
+		setNewPassword('');
+		setNewPasswordConfirmation('');
+		setIsProfileDialogOpen(true);
 	};
 
-	const handleLogoutClick = () => {
+	const handleLogoutClick = async () => {
 		setIsProfileMenuOpen(false);
-		markSuccess('Logout berhasil.');
-	};
-
-	const createMovement = (movement: Omit<Movement, 'id' | 'createdAt'>) => {
-		setMovements((current) => [
-			{
-				...movement,
-				id: createId(),
-				createdAt: new Date().toISOString(),
-			},
-			...current,
-		]);
+		try {
+			await clientApiFetch('/api/auth/logout', {
+				method: 'POST',
+			});
+		} finally {
+			clearClientAuthToken();
+			if (typeof window !== 'undefined') {
+				window.location.assign('/login');
+			}
+		}
 	};
 
 	const getStockByLocation = (productId: string, location: StockLocation) => {
@@ -727,7 +883,257 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		});
 	};
 
-	const handleStockMovement = ({
+	const normalizeErrorMessage = (error: unknown, fallback: string): string => {
+		if (error instanceof Error && error.message.trim() !== '') {
+			const msg = error.message;
+			// Map common Laravel validation messages to friendly ones
+			if (msg.toLowerCase().includes('branch ids field is required')) {
+				return 'Silakan pilih minimal satu outlet untuk memberikan akses kepada staff.';
+			}
+			if (msg.toLowerCase().includes('email has already been taken')) {
+				return 'Email ini sudah terdaftar. Silakan gunakan email lain.';
+			}
+			return msg;
+		}
+		return fallback;
+	};
+
+	const loadStaff = useCallback(async () => {
+		if (!canManageStaff) {
+			setStaffMembers([]);
+			setStaffError('');
+			setStaffLoaded(true);
+			return;
+		}
+
+		setStaffLoading(true);
+		setStaffError('');
+
+		try {
+			const response = await getTenantStaff(tenantSlug);
+			setStaffMembers(response.staff);
+		} catch (error) {
+			const message = normalizeErrorMessage(error, 'Gagal memuat data staff.');
+			setStaffError(message);
+		} finally {
+			setStaffLoading(false);
+			setStaffLoaded(true);
+		}
+	}, [canManageStaff, tenantSlug]);
+
+	const handleSaveProfile = async (): Promise<boolean> => {
+		const name = profileFormDisplayName.trim();
+		if (name.length < 2) {
+			markError('Nama profil minimal 2 karakter.');
+			return false;
+		}
+
+		setIsSavingProfile(true);
+		try {
+			const response = await updateMyProfile({
+				displayName: name,
+				phone: profileFormPhone.trim() === '' ? null : profileFormPhone.trim(),
+			});
+			setProfileDisplayName(response.profile.displayName?.trim() || name);
+			setProfilePhone(response.profile.phone ?? '');
+			markSuccess('Profil berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal memperbarui profil.'));
+			return false;
+		} finally {
+			setIsSavingProfile(false);
+		}
+	};
+
+	const handleChangePassword = async (): Promise<boolean> => {
+		if (newPassword.length < 8) {
+			markError('Password baru minimal 8 karakter.');
+			return false;
+		}
+
+		if (newPassword !== newPasswordConfirmation) {
+			markError('Konfirmasi password tidak sama.');
+			return false;
+		}
+
+		setIsChangingPassword(true);
+		try {
+			await changeMyPassword({
+				newPassword,
+				newPasswordConfirmation,
+			});
+			setNewPassword('');
+			setNewPasswordConfirmation('');
+			markSuccess('Password berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal mengubah password.'));
+			return false;
+		} finally {
+			setIsChangingPassword(false);
+		}
+	};
+
+	const handleCreateStaff = async ({
+		email,
+		displayName,
+		temporaryPassword,
+		branchIds,
+	}: {
+		email: string;
+		displayName: string;
+		temporaryPassword: string;
+		branchIds: string[];
+	}): Promise<boolean> => {
+		try {
+			await createTenantStaff({
+				tenantSlug,
+				email,
+				displayName,
+				temporaryPassword,
+				branchIds,
+			});
+			await loadStaff();
+			markSuccess('Staff berhasil ditambahkan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menambah staff.'));
+			return false;
+		}
+	};
+
+	const handleUpdateStaff = async ({
+		membershipId,
+		displayName,
+		branchIds,
+	}: {
+		membershipId: string;
+		displayName: string;
+		branchIds: string[];
+	}): Promise<boolean> => {
+		try {
+			await updateTenantStaff(membershipId, {
+				tenantSlug,
+				displayName,
+				branchIds,
+			});
+			await loadStaff();
+			markSuccess('Staff berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal memperbarui staff.'));
+			return false;
+		}
+	};
+
+	const handleResetStaffPassword = async ({
+		membershipId,
+		temporaryPassword,
+	}: {
+		membershipId: string;
+		temporaryPassword: string;
+	}): Promise<boolean> => {
+		try {
+			await resetTenantStaffPassword(membershipId, {
+				tenantSlug,
+				temporaryPassword,
+			});
+			markSuccess('Password sementara staff berhasil direset.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal mereset password staff.'));
+			return false;
+		}
+	};
+
+	const handleDeactivateStaff = async (membershipId: string): Promise<boolean> => {
+		try {
+			await deactivateTenantStaff(membershipId, { tenantSlug });
+			await loadStaff();
+			markSuccess('Staff berhasil dinonaktifkan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menonaktifkan staff.'));
+			return false;
+		}
+	};
+
+	const loadSnapshot = useCallback(async () => {
+		const snapshot = await getInventorySnapshot(tenantSlug);
+		setCategories(snapshot.categories);
+		setUnits(snapshot.units);
+		setProducts(snapshot.products);
+		setOutlets(snapshot.outlets);
+		setOutletStocks(snapshot.outletStocks);
+		setMovements(snapshot.movements);
+		setTransfers(snapshot.transfers);
+
+		const productIdSet = new Set(snapshot.products.map((item) => item.id));
+		const outletKeySet = new Set(snapshot.outlets.map((item) => `outlet:${item.id}`));
+
+		setFavoritesByLocation((current) => {
+			const next: FavoriteState = {
+				central: [],
+			};
+			for (const [key, value] of Object.entries(current) as Array<[LocationKey, string[]]>) {
+				if (key !== 'central' && !outletKeySet.has(key)) {
+					continue;
+				}
+				next[key] = value.filter((productId) => productIdSet.has(productId));
+			}
+			return next;
+		});
+
+		setUsageByLocation((current) => {
+			const next: UsageState = {
+				central: {},
+			};
+			for (const [key, value] of Object.entries(current) as Array<[LocationKey, Record<string, number>]>) {
+				if (key !== 'central' && !outletKeySet.has(key)) {
+					continue;
+				}
+				next[key] = Object.fromEntries(
+					Object.entries(value).filter(([productId]) => productIdSet.has(productId)),
+				);
+			}
+			return next;
+		});
+	}, [tenantSlug]);
+
+	useEffect(() => {
+		void loadSnapshot().catch((error: unknown) => {
+			const message = normalizeErrorMessage(error, 'Gagal memuat data inventory.');
+			setError(message);
+			pushToast(message, 'error');
+			setEventPulse(true);
+		});
+	}, [loadSnapshot]);
+
+	useEffect(() => {
+		if (!canManageStaff) {
+			return;
+		}
+
+		const isStaffTabOpen =
+			activeTab === 'more' && activeMoreTab === 'master' && activeMasterTab === 'staff';
+
+		if (!isStaffTabOpen || staffLoaded || staffLoading) {
+			return;
+		}
+
+		void loadStaff();
+	}, [
+		activeMasterTab,
+		activeMoreTab,
+		activeTab,
+		canManageStaff,
+		loadStaff,
+		staffLoaded,
+		staffLoading,
+	]);
+
+	const handleStockMovement = async ({
 		productId,
 		qty,
 		type,
@@ -739,73 +1145,34 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		type: 'in' | 'out';
 		note: string;
 		location: StockLocation;
-	}): boolean => {
-		if (!Number.isInteger(qty) || qty <= 0) {
-			markError('Jumlah harus bilangan bulat lebih dari 0.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const product = products.find((item) => item.id === productId);
-
-		if (!product) {
-			markError('Produk tidak ditemukan.');
-			return false;
-		}
-
-		if (location.kind === 'outlet' && !location.outletId) {
-			markError('Cabang/Outlet harus dipilih.');
-			return false;
-		}
-
-		const currentStock = getStockByLocation(productId, location);
-
-		if (type === 'out' && qty > currentStock) {
-			markError('Stok keluar gagal. Jumlah melebihi stok tersedia.');
-			return false;
-		}
-
-		const delta = type === 'in' ? qty : -qty;
-		const nextStock = currentStock + delta;
-
-		if (location.kind === 'central') {
-			setProducts((current) =>
-				current.map((item) =>
-					item.id === productId ? { ...item, stock: nextStock } : item,
-				),
+		try {
+			await submitMovement(tenantSlug, {
+				productId,
+				qty,
+				type,
+				note,
+				location,
+			});
+			await loadSnapshot();
+			bumpUsage(location, productId);
+			markSuccess(
+				type === 'in'
+					? 'Transaksi stok masuk berhasil disimpan.'
+					: 'Transaksi stok keluar berhasil disimpan.',
 			);
-		} else if (location.outletId) {
-			setOutletStocks((current) =>
-				upsertOutletStock(current, location.outletId!, productId, nextStock),
-			);
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menyimpan transaksi stok.'));
+			return false;
 		}
-
-		createMovement({
-			productId,
-			productName: product.name,
-			qty,
-			type,
-			note: note.trim() || (type === 'in' ? 'Stok masuk' : 'Stok keluar'),
-			delta,
-			balanceAfter: nextStock,
-			locationKind: location.kind,
-			locationId:
-				location.kind === 'central'
-					? 'central'
-					: (location.outletId ?? 'unknown'),
-			locationLabel: getLocationLabel(outlets, location),
-		});
-
-		bumpUsage(location, productId);
-		markSuccess(
-			type === 'in'
-				? 'Transaksi stok masuk berhasil disimpan.'
-				: 'Transaksi stok keluar berhasil disimpan.',
-		);
-
-		return true;
 	};
 
-	const handleOpname = ({
+	const handleOpname = async ({
 		productId,
 		actualStock,
 		note,
@@ -815,235 +1182,137 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		actualStock: number;
 		note: string;
 		location: StockLocation;
-	}): boolean => {
-		if (!Number.isInteger(actualStock) || actualStock < 0) {
-			markError('Stok fisik harus bilangan bulat dan tidak boleh negatif.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const product = products.find((item) => item.id === productId);
-
-		if (!product) {
-			markError('Produk tidak ditemukan untuk opname.');
+		try {
+			await submitOpname(tenantSlug, {
+				productId,
+				actualStock,
+				note,
+				location,
+			});
+			await loadSnapshot();
+			bumpUsage(location, productId);
+			markSuccess('Opname tersimpan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menyimpan opname.'));
 			return false;
 		}
-
-		if (location.kind === 'outlet' && !location.outletId) {
-			markError('Cabang/Outlet harus dipilih.');
-			return false;
-		}
-
-		const currentStock = getStockByLocation(productId, location);
-		const delta = actualStock - currentStock;
-
-		if (location.kind === 'central') {
-			setProducts((current) =>
-				current.map((item) =>
-					item.id === productId ? { ...item, stock: actualStock } : item,
-				),
-			);
-		} else if (location.outletId) {
-			setOutletStocks((current) =>
-				upsertOutletStock(current, location.outletId!, productId, actualStock),
-			);
-		}
-
-		createMovement({
-			productId,
-			productName: product.name,
-			qty: Math.abs(delta),
-			type: 'opname',
-			note: note.trim() || 'Penyesuaian stok opname',
-			delta,
-			balanceAfter: actualStock,
-			countedStock: actualStock,
-			locationKind: location.kind,
-			locationId:
-				location.kind === 'central'
-					? 'central'
-					: (location.outletId ?? 'unknown'),
-			locationLabel: getLocationLabel(outlets, location),
-		});
-
-		bumpUsage(location, productId);
-
-		if (delta === 0) {
-			markSuccess('Opname tersimpan. Tidak ada perubahan stok.');
-		} else {
-			markSuccess('Opname tersimpan dengan penyesuaian stok.');
-		}
-
-		return true;
 	};
 
-	const handleCreateCategory = ({ name }: { name: string }): boolean => {
-		const cleanedName = name.trim();
-
-		if (!cleanedName) {
-			markError('Nama kategori wajib diisi.');
+	const handleCreateCategory = async ({ name }: { name: string }): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const duplicate = categories.some(
-			(category) =>
-				category.name.trim().toLowerCase() === cleanedName.toLowerCase(),
-		);
-
-		if (duplicate) {
-			markError('Kategori sudah ada. Gunakan nama lain.');
+		try {
+			await createCategory(tenantSlug, { name });
+			await loadSnapshot();
+			markSuccess('Kategori berhasil ditambahkan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menambah kategori.'));
 			return false;
 		}
-
-		setCategories((current) => [
-			...current,
-			{ id: createId(), name: cleanedName },
-		]);
-		markSuccess('Kategori berhasil ditambahkan.');
-		return true;
 	};
 
-	const handleUpdateCategory = ({
+	const handleUpdateCategory = async ({
 		categoryId,
 		name,
 	}: {
 		categoryId: string;
 		name: string;
-	}): boolean => {
-		const cleanedName = name.trim();
-
-		if (!categories.some((category) => category.id === categoryId)) {
-			markError('Kategori tidak ditemukan.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (!cleanedName) {
-			markError('Nama kategori wajib diisi.');
+		try {
+			await updateCategory(tenantSlug, categoryId, { name });
+			await loadSnapshot();
+			markSuccess('Kategori berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal memperbarui kategori.'));
 			return false;
 		}
-
-		const duplicate = categories.some(
-			(category) =>
-				category.id !== categoryId &&
-				category.name.trim().toLowerCase() === cleanedName.toLowerCase(),
-		);
-
-		if (duplicate) {
-			markError('Kategori sudah ada. Gunakan nama lain.');
-			return false;
-		}
-
-		setCategories((current) =>
-			current.map((category) =>
-				category.id === categoryId
-					? { ...category, name: cleanedName }
-					: category,
-			),
-		);
-
-		markSuccess('Kategori berhasil diperbarui.');
-		return true;
 	};
 
-	const handleDeleteCategory = (categoryId: string): boolean => {
-		const target = categories.find((category) => category.id === categoryId);
-
-		if (!target) {
-			markError('Kategori tidak ditemukan.');
+	const handleDeleteCategory = async (categoryId: string): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const used = products.some((product) => product.categoryId === categoryId);
-
-		if (used) {
-			markError('Kategori tidak bisa dihapus karena masih dipakai produk.');
+		try {
+			await deleteCategory(tenantSlug, categoryId);
+			await loadSnapshot();
+			markSuccess('Kategori berhasil dihapus.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menghapus kategori.'));
 			return false;
 		}
-
-		setCategories((current) =>
-			current.filter((category) => category.id !== categoryId),
-		);
-		markSuccess('Kategori berhasil dihapus.');
-		return true;
 	};
 
-	const handleCreateUnit = ({ name }: { name: string }): boolean => {
-		const cleanedName = name.trim();
-
-		if (!cleanedName) {
-			markError('Nama satuan wajib diisi.');
+	const handleCreateUnit = async ({ name }: { name: string }): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const duplicate = units.some(
-			(unit) => unit.name.trim().toLowerCase() === cleanedName.toLowerCase(),
-		);
-		if (duplicate) {
-			markError('Satuan sudah ada. Gunakan nama lain.');
+		try {
+			await createUnit(tenantSlug, { name });
+			await loadSnapshot();
+			markSuccess('Satuan berhasil ditambahkan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menambah satuan.'));
 			return false;
 		}
-
-		setUnits((current) => [...current, { id: createId(), name: cleanedName }]);
-		markSuccess('Satuan berhasil ditambahkan.');
-		return true;
 	};
 
-	const handleUpdateUnit = ({
+	const handleUpdateUnit = async ({
 		unitId,
 		name,
 	}: {
 		unitId: string;
 		name: string;
-	}): boolean => {
-		const cleanedName = name.trim();
-
-		if (!units.some((unit) => unit.id === unitId)) {
-			markError('Satuan tidak ditemukan.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (!cleanedName) {
-			markError('Nama satuan wajib diisi.');
+		try {
+			await updateUnit(tenantSlug, unitId, { name });
+			await loadSnapshot();
+			markSuccess('Satuan berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal memperbarui satuan.'));
 			return false;
 		}
-
-		const duplicate = units.some(
-			(unit) =>
-				unit.id !== unitId &&
-				unit.name.trim().toLowerCase() === cleanedName.toLowerCase(),
-		);
-		if (duplicate) {
-			markError('Satuan sudah ada. Gunakan nama lain.');
-			return false;
-		}
-
-		setUnits((current) =>
-			current.map((unit) =>
-				unit.id === unitId ? { ...unit, name: cleanedName } : unit,
-			),
-		);
-		markSuccess('Satuan berhasil diperbarui.');
-		return true;
 	};
 
-	const handleDeleteUnit = (unitId: string): boolean => {
-		const target = units.find((unit) => unit.id === unitId);
-		if (!target) {
-			markError('Satuan tidak ditemukan.');
+	const handleDeleteUnit = async (unitId: string): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const used = products.some((product) => product.unitId === unitId);
-		if (used) {
-			markError('Satuan tidak bisa dihapus karena masih dipakai produk.');
+		try {
+			await deleteUnit(tenantSlug, unitId);
+			await loadSnapshot();
+			markSuccess('Satuan berhasil dihapus.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menghapus satuan.'));
 			return false;
 		}
-
-		setUnits((current) => current.filter((unit) => unit.id !== unitId));
-		markSuccess('Satuan berhasil dihapus.');
-		return true;
 	};
 
-	const handleCreateProduct = ({
+	const handleCreateProduct = async ({
 		name,
 		sku,
 		initialStock,
@@ -1057,79 +1326,30 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
-	}): boolean => {
-		const cleanedName = name.trim();
-		const cleanedSku = sku.trim().toUpperCase();
-
-		if (!cleanedName || !cleanedSku) {
-			markError('Nama produk dan SKU wajib diisi.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (
-			!categoryId ||
-			!categories.some((category) => category.id === categoryId)
-		) {
-			markError('Kategori wajib dipilih.');
-			return false;
-		}
-		if (!unitId || !units.some((unit) => unit.id === unitId)) {
-			markError('Satuan wajib dipilih.');
-			return false;
-		}
-
-		if (!Number.isInteger(initialStock) || initialStock < 0) {
-			markError('Stok awal harus bilangan bulat dan tidak boleh negatif.');
-			return false;
-		}
-		if (!Number.isInteger(minimumLowStock) || minimumLowStock < 0) {
-			markError(
-				'Minimum stok rendah harus bilangan bulat dan tidak boleh negatif.',
-			);
-			return false;
-		}
-
-		const duplicateSku = products.some(
-			(product) => product.sku.trim().toUpperCase() === cleanedSku,
-		);
-
-		if (duplicateSku) {
-			markError('SKU sudah terpakai. Gunakan SKU lain.');
-			return false;
-		}
-
-		const newProduct: Product = {
-			id: createId(),
-			name: cleanedName,
-			sku: cleanedSku,
-			stock: initialStock,
-			minimumLowStock,
-			categoryId,
-			unitId,
-		};
-
-		setProducts((current) => [...current, newProduct]);
-
-		if (initialStock > 0) {
-			createMovement({
-				productId: newProduct.id,
-				productName: newProduct.name,
-				qty: initialStock,
-				type: 'in',
-				note: 'Stok awal produk',
-				delta: initialStock,
-				balanceAfter: initialStock,
-				locationKind: 'central',
-				locationId: 'central',
-				locationLabel: 'Pusat',
+		try {
+			await createProduct(tenantSlug, {
+				name,
+				sku,
+				initialStock,
+				minimumLowStock,
+				categoryId,
+				unitId,
 			});
+			await loadSnapshot();
+			markSuccess('Produk berhasil ditambahkan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menambah produk.'));
+			return false;
 		}
-
-		markSuccess('Produk berhasil ditambahkan.');
-		return true;
 	};
 
-	const handleUpdateProduct = ({
+	const handleUpdateProduct = async ({
 		productId,
 		name,
 		sku,
@@ -1143,106 +1363,45 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		minimumLowStock: number;
 		categoryId: string;
 		unitId: string;
-	}): boolean => {
-		const cleanedName = name.trim();
-		const cleanedSku = sku.trim().toUpperCase();
-
-		if (!products.some((product) => product.id === productId)) {
-			markError('Produk tidak ditemukan.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (!cleanedName || !cleanedSku) {
-			markError('Nama produk dan SKU wajib diisi.');
+		try {
+			await updateProduct(tenantSlug, productId, {
+				name,
+				sku,
+				minimumLowStock,
+				categoryId,
+				unitId,
+			});
+			await loadSnapshot();
+			markSuccess('Produk berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal memperbarui produk.'));
 			return false;
 		}
-
-		if (
-			!categoryId ||
-			!categories.some((category) => category.id === categoryId)
-		) {
-			markError('Kategori wajib dipilih.');
-			return false;
-		}
-		if (!unitId || !units.some((unit) => unit.id === unitId)) {
-			markError('Satuan wajib dipilih.');
-			return false;
-		}
-		if (!Number.isInteger(minimumLowStock) || minimumLowStock < 0) {
-			markError(
-				'Minimum stok rendah harus bilangan bulat dan tidak boleh negatif.',
-			);
-			return false;
-		}
-
-		const duplicateSku = products.some(
-			(product) =>
-				product.id !== productId &&
-				product.sku.trim().toUpperCase() === cleanedSku,
-		);
-
-		if (duplicateSku) {
-			markError('SKU sudah terpakai. Gunakan SKU lain.');
-			return false;
-		}
-
-		setProducts((current) =>
-			current.map((product) =>
-				product.id === productId
-					? {
-							...product,
-							name: cleanedName,
-							sku: cleanedSku,
-							minimumLowStock,
-							categoryId,
-							unitId,
-						}
-					: product,
-			),
-		);
-
-		markSuccess('Produk berhasil diperbarui.');
-		return true;
 	};
 
-	const handleDeleteProduct = (productId: string): boolean => {
-		const target = products.find((product) => product.id === productId);
-
-		if (!target) {
-			markError('Produk tidak ditemukan.');
+	const handleDeleteProduct = async (productId: string): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		setProducts((current) =>
-			current.filter((product) => product.id !== productId),
-		);
-		setOutletStocks((current) =>
-			current.filter((record) => record.productId !== productId),
-		);
-
-		setFavoritesByLocation((current) => {
-			const next: FavoriteState = { ...current };
-			for (const key of Object.keys(next) as LocationKey[]) {
-				next[key] = (next[key] ?? []).filter((id) => id !== productId);
-			}
-			return next;
-		});
-
-		setUsageByLocation((current) => {
-			const next: UsageState = { ...current };
-			for (const key of Object.keys(next) as LocationKey[]) {
-				const usage = { ...(next[key] ?? {}) };
-				delete usage[productId];
-				next[key] = usage;
-			}
-			return next;
-		});
-
-		markSuccess('Produk berhasil dihapus.');
-		return true;
+		try {
+			await deleteProduct(tenantSlug, productId);
+			await loadSnapshot();
+			markSuccess('Produk berhasil dihapus.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menghapus produk.'));
+			return false;
+		}
 	};
 
-	const handleCreateOutlet = ({
+	const handleCreateOutlet = async ({
 		name,
 		code,
 		address,
@@ -1254,47 +1413,29 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		address: string;
 		latitude: number;
 		longitude: number;
-	}): boolean => {
-		const cleanedName = name.trim();
-		const cleanedCode = code.trim().toUpperCase();
-		const cleanedAddress = address.trim();
-
-		if (!cleanedName || !cleanedCode || !cleanedAddress) {
-			markError('Nama outlet, kode outlet, dan alamat wajib diisi.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-			markError('Koordinat outlet tidak valid.');
-			return false;
-		}
-
-		const duplicate = outlets.some(
-			(outlet) => outlet.code.trim().toUpperCase() === cleanedCode,
-		);
-
-		if (duplicate) {
-			markError('Kode outlet sudah terpakai.');
-			return false;
-		}
-
-		setOutlets((current) => [
-			...current,
-			{
-				id: createId(),
-				name: cleanedName,
-				code: cleanedCode,
-				address: cleanedAddress,
+		try {
+			await createOutlet(tenantSlug, {
+				name,
+				code,
+				address,
 				latitude,
 				longitude,
-			},
-		]);
-
-		markSuccess('Outlet berhasil ditambahkan.');
-		return true;
+			});
+			await loadSnapshot();
+			markSuccess('Outlet berhasil ditambahkan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menambah outlet.'));
+			return false;
+		}
 	};
 
-	const handleUpdateOutlet = ({
+	const handleUpdateOutlet = async ({
 		outletId,
 		name,
 		code,
@@ -1308,124 +1449,45 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		address: string;
 		latitude: number;
 		longitude: number;
-	}): boolean => {
-		const cleanedName = name.trim();
-		const cleanedCode = code.trim().toUpperCase();
-		const cleanedAddress = address.trim();
-
-		if (!outlets.some((outlet) => outlet.id === outletId)) {
-			markError('Outlet tidak ditemukan.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (!cleanedName || !cleanedCode || !cleanedAddress) {
-			markError('Nama outlet, kode outlet, dan alamat wajib diisi.');
+		try {
+			await updateOutlet(tenantSlug, outletId, {
+				name,
+				code,
+				address,
+				latitude,
+				longitude,
+			});
+			await loadSnapshot();
+			markSuccess('Outlet berhasil diperbarui.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal memperbarui outlet.'));
 			return false;
 		}
-
-		if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-			markError('Koordinat outlet tidak valid.');
-			return false;
-		}
-
-		const duplicate = outlets.some(
-			(outlet) =>
-				outlet.id !== outletId &&
-				outlet.code.trim().toUpperCase() === cleanedCode,
-		);
-
-		if (duplicate) {
-			markError('Kode outlet sudah terpakai.');
-			return false;
-		}
-
-		setOutlets((current) =>
-			current.map((outlet) =>
-				outlet.id === outletId
-					? {
-							...outlet,
-							name: cleanedName,
-							code: cleanedCode,
-							address: cleanedAddress,
-							latitude,
-							longitude,
-						}
-					: outlet,
-			),
-		);
-
-		markSuccess('Outlet berhasil diperbarui.');
-		return true;
 	};
 
-	const handleDeleteOutlet = (outletId: string): boolean => {
-		const target = outlets.find((outlet) => outlet.id === outletId);
-
-		if (!target) {
-			markError('Outlet tidak ditemukan.');
+	const handleDeleteOutlet = async (outletId: string): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		const usedInMovement = movements.some(
-			(movement) =>
-				movement.locationKind === 'outlet' && movement.locationId === outletId,
-		);
-
-		if (usedInMovement) {
-			markError(
-				'Outlet tidak bisa dihapus karena sudah dipakai pada riwayat pergerakan.',
-			);
+		try {
+			await deleteOutlet(tenantSlug, outletId);
+			await loadSnapshot();
+			markSuccess('Outlet berhasil dihapus.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menghapus outlet.'));
 			return false;
 		}
-
-		const usedInTransfer = transfers.some(
-			(transfer) =>
-				transfer.sourceOutletId === outletId ||
-				transfer.destinations.some(
-					(destination) => destination.outletId === outletId,
-				),
-		);
-
-		if (usedInTransfer) {
-			markError(
-				'Outlet tidak bisa dihapus karena sudah dipakai pada riwayat transfer.',
-			);
-			return false;
-		}
-
-		const hasStock = outletStocks.some(
-			(record) => record.outletId === outletId && record.qty > 0,
-		);
-
-		if (hasStock) {
-			markError('Outlet tidak bisa dihapus karena masih memiliki stok produk.');
-			return false;
-		}
-
-		setOutlets((current) => current.filter((outlet) => outlet.id !== outletId));
-		setOutletStocks((current) =>
-			current.filter((record) => record.outletId !== outletId),
-		);
-
-		setFavoritesByLocation((current) => {
-			const key = `outlet:${outletId}` as LocationKey;
-			const next = { ...current };
-			delete next[key];
-			return next;
-		});
-
-		setUsageByLocation((current) => {
-			const key = `outlet:${outletId}` as LocationKey;
-			const next = { ...current };
-			delete next[key];
-			return next;
-		});
-
-		markSuccess('Outlet berhasil dihapus.');
-		return true;
 	};
 
-	const handleTransferProduct = ({
+	const handleTransferProduct = async ({
 		productId,
 		source,
 		destinations,
@@ -1435,181 +1497,26 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 		source: StockLocation;
 		destinations: Array<{ outletId: string; qty: number }>;
 		note: string;
-	}): boolean => {
-		const product = products.find((item) => item.id === productId);
-
-		if (!product) {
-			markError('Produk transfer tidak ditemukan.');
+	}): Promise<boolean> => {
+		if (!ensureWritable()) {
 			return false;
 		}
 
-		if (source.kind === 'outlet' && !source.outletId) {
-			markError('Outlet sumber harus dipilih.');
-			return false;
-		}
-
-		if (
-			source.kind === 'outlet' &&
-			!outlets.some((outlet) => outlet.id === source.outletId)
-		) {
-			markError('Outlet sumber tidak ditemukan.');
-			return false;
-		}
-
-		const cleanedDestinations = destinations
-			.map((destination) => ({
-				outletId: destination.outletId,
-				qty: Number(destination.qty),
-			}))
-			.filter((destination) => destination.outletId);
-
-		if (cleanedDestinations.length === 0) {
-			markError('Pilih minimal satu outlet tujuan transfer.');
-			return false;
-		}
-
-		if (
-			cleanedDestinations.some(
-				(destination) =>
-					!Number.isInteger(destination.qty) || destination.qty <= 0,
-			)
-		) {
-			markError(
-				'Jumlah transfer per outlet harus bilangan bulat lebih dari 0.',
-			);
-			return false;
-		}
-
-		const destinationIds = cleanedDestinations.map(
-			(destination) => destination.outletId,
-		);
-		const uniqueDestinationCount = new Set(destinationIds).size;
-
-		if (uniqueDestinationCount !== destinationIds.length) {
-			markError('Outlet tujuan transfer tidak boleh duplikat.');
-			return false;
-		}
-
-		if (
-			source.kind === 'outlet' &&
-			cleanedDestinations.some(
-				(destination) => destination.outletId === source.outletId,
-			)
-		) {
-			markError('Outlet tujuan tidak boleh sama dengan outlet sumber.');
-			return false;
-		}
-
-		const missingOutlet = cleanedDestinations.some(
-			(destination) =>
-				!outlets.some((outlet) => outlet.id === destination.outletId),
-		);
-
-		if (missingOutlet) {
-			markError('Ada outlet tujuan yang tidak ditemukan.');
-			return false;
-		}
-
-		const totalQty = cleanedDestinations.reduce(
-			(sum, destination) => sum + destination.qty,
-			0,
-		);
-		const sourceStock = getStockByLocation(productId, source);
-
-		if (totalQty > sourceStock) {
-			markError('Transfer gagal. Total jumlah transfer melebihi stok sumber.');
-			return false;
-		}
-
-		if (source.kind === 'central') {
-			setProducts((current) =>
-				current.map((item) =>
-					item.id === productId
-						? { ...item, stock: item.stock - totalQty }
-						: item,
-				),
-			);
-
-			setOutletStocks((current) => {
-				let next = current;
-
-				for (const destination of cleanedDestinations) {
-					const currentQty = getOutletStock(
-						next,
-						destination.outletId,
-						productId,
-					);
-					next = upsertOutletStock(
-						next,
-						destination.outletId,
-						productId,
-						currentQty + destination.qty,
-					);
-				}
-
-				return next;
+		try {
+			await submitTransfer(tenantSlug, {
+				productId,
+				source,
+				destinations,
+				note,
 			});
-		} else if (source.outletId) {
-			setOutletStocks((current) => {
-				let next = current;
-
-				const sourceCurrentQty = getOutletStock(
-					next,
-					source.outletId!,
-					productId,
-				);
-				next = upsertOutletStock(
-					next,
-					source.outletId!,
-					productId,
-					sourceCurrentQty - totalQty,
-				);
-
-				for (const destination of cleanedDestinations) {
-					const currentQty = getOutletStock(
-						next,
-						destination.outletId,
-						productId,
-					);
-					next = upsertOutletStock(
-						next,
-						destination.outletId,
-						productId,
-						currentQty + destination.qty,
-					);
-				}
-
-				return next;
-			});
+			await loadSnapshot();
+			openMore('transfer');
+			markSuccess('Transfer produk berhasil disimpan.');
+			return true;
+		} catch (error) {
+			markError(normalizeErrorMessage(error, 'Gagal menyimpan transfer.'));
+			return false;
 		}
-
-		const destinationsSnapshot = cleanedDestinations.map((destination) => {
-			const outlet = outlets.find((item) => item.id === destination.outletId)!;
-			return {
-				outletId: outlet.id,
-				outletName: outlet.name,
-				qty: destination.qty,
-			};
-		});
-
-		const transferRecord: TransferRecord = {
-			id: createId(),
-			productId,
-			productName: product.name,
-			sourceKind: source.kind,
-			sourceOutletId: source.outletId,
-			sourceLabel: getLocationLabel(outlets, source),
-			destinations: destinationsSnapshot,
-			totalQty,
-			note: note.trim() || 'Transfer stok',
-			createdAt: new Date().toISOString(),
-		};
-
-		setTransfers((current) => [transferRecord, ...current]);
-		openMore('transfer');
-		markSuccess('Transfer produk berhasil disimpan.');
-
-		return true;
 	};
 
 	return (
@@ -1624,12 +1531,19 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 				<TopBarProfile
 					tone={activeTone}
 					headerClass={activeToneStyle.header}
+					contextLabel={headerLabel}
+					contextTitle={headerTitle}
+					userDisplayName={profileDisplayName}
+					userRoleLabel={getMembershipRoleLabel(membershipRole)}
+					subscriptionStatus={subscriptionStatus}
+					trialEndAt={trialEndAt}
 					eventPulse={eventPulse}
 					isOpen={isProfileMenuOpen}
 					menuRef={profileMenuRef}
 					onToggle={() => setIsProfileMenuOpen((current) => !current)}
 					onProfileClick={handleProfileClick}
 					onLogoutClick={handleLogoutClick}
+					onOpenBilling={() => setIsBillingDialogOpen(true)}
 				/>
 
 				<DesktopTabs
@@ -1644,16 +1558,33 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 					</p>
 				) : null}
 
+				{isReadOnly ? (
+					<p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+						Mode read-only aktif karena trial/langganan belum aktif. Anda masih bisa melihat data.
+						{membershipRole === 'tenant_owner' && (
+							<button 
+								onClick={() => setIsBillingDialogOpen(true)}
+								className="ml-1 font-bold underline hover:text-amber-900"
+							>
+								Perpanjang sekarang.
+							</button>
+						)}
+					</p>
+				) : null}
+
 				<div>
 						{activeTab === 'dashboard' ? (
 							<Dashboard
+								tenantSlug={tenantSlug}
 								products={products}
-								movements={movements}
-								transfers={transfers}
+								movements={accessibleMovements}
+								transfers={accessibleTransfers}
 								outlets={outlets}
-								outletStocks={outletStocks}
+								outletStocks={accessibleOutletStocks}
 								categoryNameById={categoryNameById}
 								unitNameById={unitNameById}
+								membershipRole={membershipRole}
+								accessibleBranchIds={accessibleBranchIds}
 								onOpenTransfer={() => selectMoreDialogItem('transfer')}
 								onOpenHistory={() => selectMoreDialogItem('history')}
 								onOpenReport={openReportFromDashboard}
@@ -1672,6 +1603,8 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							getStockByLocation={getStockByLocation}
 							onToggleFavorite={toggleFavoriteProduct}
 							onSubmit={handleStockMovement}
+							membershipRole={membershipRole}
+							accessibleBranchIds={accessibleBranchIds}
 						/>
 					) : null}
 
@@ -1687,6 +1620,8 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							getStockByLocation={getStockByLocation}
 							onToggleFavorite={toggleFavoriteProduct}
 							onSubmit={handleStockMovement}
+							membershipRole={membershipRole}
+							accessibleBranchIds={accessibleBranchIds}
 						/>
 					) : null}
 
@@ -1695,8 +1630,9 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							activeTab={activeMoreTab}
 							tone={activeTone}
 							onChangeTab={handleMoreTabChange}
-							onOpenMenu={openMoreDialog}
+							onOpenMenu={() => setIsMoreMenuOpen(true)}
 							movements={pagedMovements}
+							allMovements={accessibleMovements}
 							movementTotal={filteredMovements.length}
 							movementPage={Math.min(historyPage, historyTotalPages)}
 								movementPageSize={historyPageSize}
@@ -1713,6 +1649,7 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 								onChangeHistoryCustomEndDate={setHistoryCustomEndDate}
 								onChangeHistorySearchQuery={setHistorySearchQuery}
 								onChangeMasterTab={handleMasterTabChange}
+								membershipRole={membershipRole}
 							activeReportTab={activeReportTab}
 							onChangeReportTab={handleReportTabChange}
 							onChangeMovementPage={setHistoryPage}
@@ -1739,9 +1676,11 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							onUpdateUnit={handleUpdateUnit}
 							onDeleteUnit={handleDeleteUnit}
 							outlets={outlets}
-							outletStocks={outletStocks}
+							outletStocks={accessibleOutletStocks}
+							allOutletStocks={accessibleOutletStocks}
 							transfers={pagedTransfers}
-							transferTotal={transfers.length}
+							allTransfers={accessibleTransfers}
+							transferTotal={accessibleTransfers.length}
 							transferPage={Math.min(transferPage, transferTotalPages)}
 							transferPageSize={transferPageSize}
 							transferTotalPages={transferTotalPages}
@@ -1754,6 +1693,14 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 								onCreateOutlet={handleCreateOutlet}
 								onUpdateOutlet={handleUpdateOutlet}
 								onDeleteOutlet={handleDeleteOutlet}
+								staffMembers={staffMembers}
+								staffLoading={staffLoading}
+								staffError={staffError}
+								onRefreshStaff={loadStaff}
+								onCreateStaff={handleCreateStaff}
+								onUpdateStaff={handleUpdateStaff}
+								onResetStaffPassword={handleResetStaffPassword}
+								onDeactivateStaff={handleDeactivateStaff}
 							onSubmitTransfer={handleTransferProduct}
 							onSubmitOpname={handleOpname}
 							onNotifySuccess={markSuccess}
@@ -1762,10 +1709,36 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 							usageByLocation={usageByLocation}
 							getStockByLocation={getStockByLocation}
 							onToggleFavorite={toggleFavoriteProduct}
+							accessibleBranchIds={accessibleBranchIds}
 						/>
 					) : null}
 				</div>
 			</section>
+
+			<ProfileDialog
+				isOpen={isProfileDialogOpen}
+				email={currentUserSession.user.email}
+				displayName={profileFormDisplayName}
+				phone={profileFormPhone}
+				newPassword={newPassword}
+				newPasswordConfirmation={newPasswordConfirmation}
+				isSavingProfile={isSavingProfile}
+				isChangingPassword={isChangingPassword}
+				onClose={() => setIsProfileDialogOpen(false)}
+				onChangeDisplayName={setProfileFormDisplayName}
+				onChangePhone={setProfileFormPhone}
+				onChangeNewPassword={setNewPassword}
+				onChangeNewPasswordConfirmation={setNewPasswordConfirmation}
+				onSaveProfile={handleSaveProfile}
+				onChangePassword={handleChangePassword}
+			/>
+
+			<BillingDialog
+				isOpen={isBillingDialogOpen}
+				onClose={() => setIsBillingDialogOpen(false)}
+				tenantSlug={tenantSlug}
+				subscriptionStatus={subscriptionStatus}
+			/>
 
 			<BottomNav
 				activeTab={activeTab}
@@ -1784,15 +1757,4 @@ export default function InventoryApp({ initialNavigation }: InventoryAppProps) {
 			/>
 		</main>
 	);
-}
-
-function createId() {
-	if (
-		typeof crypto !== 'undefined' &&
-		typeof crypto.randomUUID === 'function'
-	) {
-		return crypto.randomUUID();
-	}
-
-	return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

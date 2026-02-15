@@ -24,6 +24,10 @@ export interface LowStockPriority {
 	currentStock: number;
 	minimumLowStock: number;
 	gap: number;
+	locationKind: 'central' | 'outlet';
+	locationKey: 'central' | `outlet:${string}`;
+	locationLabel: string;
+	outletId?: string;
 }
 
 export interface DashboardActivityFeedItem {
@@ -120,6 +124,180 @@ function getScopeStockTotal(
 	return central + outlets;
 }
 
+function getOutletLabel(outlets: Outlet[], outletId: string) {
+	const outlet = outlets.find((item) => item.id === outletId);
+	return outlet ? `${outlet.name} (${outlet.code})` : 'Outlet tidak dikenal';
+}
+
+function buildOutletStockMap(outletStocks: OutletStockRecord[]) {
+	return outletStocks.reduce<Record<string, number>>((accumulator, record) => {
+		accumulator[`${record.outletId}:${record.productId}`] = record.qty;
+		return accumulator;
+	}, {});
+}
+
+function buildActiveProductIdsByOutlet({
+	outlets,
+	outletStocks,
+	movements,
+	transfers,
+}: {
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
+	movements: Movement[];
+	transfers: TransferRecord[];
+}) {
+	const byOutlet = outlets.reduce<Record<string, Set<string>>>(
+		(accumulator, outlet) => {
+			accumulator[outlet.id] = new Set<string>();
+			return accumulator;
+		},
+		{},
+	);
+
+	for (const record of outletStocks) {
+		if (!byOutlet[record.outletId]) {
+			byOutlet[record.outletId] = new Set<string>();
+		}
+		byOutlet[record.outletId].add(record.productId);
+	}
+
+	for (const movement of movements) {
+		if (movement.locationKind !== 'outlet') {
+			continue;
+		}
+		if (!byOutlet[movement.locationId]) {
+			byOutlet[movement.locationId] = new Set<string>();
+		}
+		byOutlet[movement.locationId].add(movement.productId);
+	}
+
+	for (const transfer of transfers) {
+		if (transfer.sourceKind === 'outlet' && transfer.sourceOutletId) {
+			if (!byOutlet[transfer.sourceOutletId]) {
+				byOutlet[transfer.sourceOutletId] = new Set<string>();
+			}
+			byOutlet[transfer.sourceOutletId].add(transfer.productId);
+		}
+
+		for (const destination of transfer.destinations) {
+			if (!byOutlet[destination.outletId]) {
+				byOutlet[destination.outletId] = new Set<string>();
+			}
+			byOutlet[destination.outletId].add(transfer.productId);
+		}
+	}
+
+	return byOutlet;
+}
+
+function buildLowStockCandidates({
+	products,
+	outlets,
+	outletStocks,
+	movements,
+	transfers,
+	locationFilter,
+}: {
+	products: Product[];
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
+	movements: Movement[];
+	transfers: TransferRecord[];
+	locationFilter: LocationFilter;
+}): LowStockPriority[] {
+	const productById = products.reduce<Record<string, Product>>(
+		(accumulator, product) => {
+			accumulator[product.id] = product;
+			return accumulator;
+		},
+		{},
+	);
+	const outletStockMap = buildOutletStockMap(outletStocks);
+	const activeProductIdsByOutlet = buildActiveProductIdsByOutlet({
+		outlets,
+		outletStocks,
+		movements,
+		transfers,
+	});
+	const candidates: LowStockPriority[] = [];
+
+	const addCentralCandidates = () => {
+		for (const product of products) {
+			if (product.stock > product.minimumLowStock) {
+				continue;
+			}
+			candidates.push({
+				productId: product.id,
+				name: product.name,
+				sku: product.sku,
+				currentStock: product.stock,
+				minimumLowStock: product.minimumLowStock,
+				gap: Math.max(0, product.minimumLowStock - product.stock),
+				locationKind: 'central',
+				locationKey: 'central',
+				locationLabel: 'Pusat',
+			});
+		}
+	};
+
+	const addOutletCandidates = (outletId: string) => {
+		const productIds = activeProductIdsByOutlet[outletId];
+		if (!productIds || productIds.size === 0) {
+			return;
+		}
+
+		const locationLabel = getOutletLabel(outlets, outletId);
+		for (const productId of productIds) {
+			const product = productById[productId];
+			if (!product) {
+				continue;
+			}
+			const currentStock = outletStockMap[`${outletId}:${productId}`] ?? 0;
+			if (currentStock > product.minimumLowStock) {
+				continue;
+			}
+			candidates.push({
+				productId: product.id,
+				name: product.name,
+				sku: product.sku,
+				currentStock,
+				minimumLowStock: product.minimumLowStock,
+				gap: Math.max(0, product.minimumLowStock - currentStock),
+				locationKind: 'outlet',
+				locationKey: `outlet:${outletId}`,
+				locationLabel,
+				outletId,
+			});
+		}
+	};
+
+	if (locationFilter === 'central') {
+		addCentralCandidates();
+	} else if (locationFilter.startsWith('outlet:')) {
+		addOutletCandidates(locationFilter.slice('outlet:'.length));
+	} else {
+		addCentralCandidates();
+		for (const outlet of outlets) {
+			addOutletCandidates(outlet.id);
+		}
+	}
+
+	return candidates.sort((a, b) => {
+		if (b.gap !== a.gap) {
+			return b.gap - a.gap;
+		}
+		if (a.currentStock !== b.currentStock) {
+			return a.currentStock - b.currentStock;
+		}
+		const locationCompare = a.locationLabel.localeCompare(b.locationLabel, 'id');
+		if (locationCompare !== 0) {
+			return locationCompare;
+		}
+		return a.name.localeCompare(b.name, 'id');
+	});
+}
+
 export function filterMovementsByPeriodAndLocation(
 	movements: Movement[],
 	period: DashboardPeriod,
@@ -156,15 +334,19 @@ export function filterTransfersByPeriodAndLocation(
 
 export function buildDashboardKpis({
 	products,
+	outlets,
 	outletStocks,
 	movements,
+	transfers = [],
 	period,
 	locationFilter,
 	nowMs = Date.now(),
 }: {
 	products: Product[];
+	outlets: Outlet[];
 	outletStocks: OutletStockRecord[];
 	movements: Movement[];
+	transfers?: TransferRecord[];
 	period: DashboardPeriod;
 	locationFilter: LocationFilter;
 	nowMs?: number;
@@ -185,9 +367,14 @@ export function buildDashboardKpis({
 	const opnameEvents = scopedMovements.filter(
 		(movement) => movement.type === 'opname',
 	).length;
-	const lowStockCount = products.filter(
-		(product) => product.stock <= product.minimumLowStock,
-	).length;
+	const lowStockCount = buildLowStockCandidates({
+		products,
+		outlets,
+		outletStocks,
+		movements,
+		transfers,
+		locationFilter,
+	}).length;
 
 	return {
 		scopeStock: getScopeStockTotal(products, outletStocks, locationFilter),
@@ -199,24 +386,31 @@ export function buildDashboardKpis({
 	};
 }
 
-export function buildLowStockPriorities(products: Product[], limit = 5) {
-	return products
-		.filter((product) => product.stock <= product.minimumLowStock)
-		.map<LowStockPriority>((product) => ({
-			productId: product.id,
-			name: product.name,
-			sku: product.sku,
-			currentStock: product.stock,
-			minimumLowStock: product.minimumLowStock,
-			gap: Math.max(0, product.minimumLowStock - product.stock),
-		}))
-		.sort((a, b) => {
-			if (b.gap !== a.gap) {
-				return b.gap - a.gap;
-			}
-			return a.name.localeCompare(b.name, 'id');
-		})
-		.slice(0, limit);
+export function buildLowStockPriorities({
+	products,
+	outlets,
+	outletStocks,
+	movements,
+	transfers = [],
+	locationFilter,
+	limit = 5,
+}: {
+	products: Product[];
+	outlets: Outlet[];
+	outletStocks: OutletStockRecord[];
+	movements: Movement[];
+	transfers?: TransferRecord[];
+	locationFilter: LocationFilter;
+	limit?: number;
+}) {
+	return buildLowStockCandidates({
+		products,
+		outlets,
+		outletStocks,
+		movements,
+		transfers,
+		locationFilter,
+	}).slice(0, limit);
 }
 
 export function buildRecentActivityFeed({

@@ -1,4 +1,11 @@
-import { FavoriteState, LocationKey, Movement, Product, UsageState } from '@/lib/types';
+import {
+  FavoriteState,
+  LocationKey,
+  Movement,
+  Outlet,
+  Product,
+  UsageState,
+} from '@/lib/types';
 
 export function getProductUnitLabel(product: Product, unitNameById: Record<string, string>) {
   return unitNameById[product.unitId] ?? '-';
@@ -72,6 +79,43 @@ export function buildSkuFromName(name: string, existingProducts: Product[], excl
   let candidate = `${base}-${serial}`;
 
   while (usedSku.has(candidate)) {
+    serial += 1;
+    candidate = `${base}-${serial}`;
+  }
+
+  return candidate;
+}
+
+export function buildOutletCodeFromName(
+  name: string,
+  existingOutlets: Outlet[],
+  excludedOutletId?: string,
+): string {
+  const normalized = name
+    .trim()
+    .normalize('NFKD')
+    .replace(/[^\x00-\x7F]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const base = tokens.length > 0 ? tokens.map((token) => token.slice(0, 3)).join('-').slice(0, 16) : 'OUT';
+  const usedCode = new Set(
+    existingOutlets
+      .filter((outlet) => outlet.id !== excludedOutletId)
+      .map((outlet) => outlet.code.trim().toUpperCase()),
+  );
+
+  if (!usedCode.has(base)) {
+    return base;
+  }
+
+  let serial = 2;
+  let candidate = `${base}-${serial}`;
+
+  while (usedCode.has(candidate)) {
     serial += 1;
     candidate = `${base}-${serial}`;
   }

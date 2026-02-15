@@ -9,7 +9,7 @@ export type MoreTab =
   | 'transfer'
   | 'opname'
   | 'report';
-export type MasterTab = 'products' | 'categories' | 'units' | 'outlets';
+export type MasterTab = 'products' | 'categories' | 'units' | 'outlets' | 'staff';
 export type ReportTab = 'analytics' | 'export' | 'item-report';
 export type HistoryFilter = 'all' | MovementType;
 export type HistoryPeriod = 'today' | 'last7days' | 'last30days' | 'custom';

@@ -1,137 +1,41 @@
-# Aplikasi Inventori Stok (Next.js + Tailwind CSS)
+# SaaS Inventory Multi Outlet/Cabang (Next.js Frontend + Laravel API)
 
-Aplikasi manajemen stok untuk gudang pusat dan outlet, dengan fokus pada alur operasional harian: stok masuk/keluar, transfer, opname, dan pengelolaan master data.
+Aplikasi ini sekarang berfungsi sebagai **frontend Next.js** yang terhubung ke backend API Laravel terpisah.
 
-## Fitur Saat Ini
+## Arsitektur
+- Frontend: Next.js 14 (repo ini)
+- Backend API: Laravel (`inventory-api-laravel`, repo terpisah)
+- Database: MySQL (di backend Laravel)
+- Auth: Bearer token (Sanctum personal access token), token disimpan pada cookie frontend
 
-### 1) Dashboard
-- Filter global dashboard berdasarkan lokasi (`Semua`, `Pusat`, `Outlet`) dan periode (`Hari Ini`, `7 Hari`, `30 Hari`).
-- Quick action operasional: `Stok Masuk`, `Stok Keluar`, `Transfer`, `Opname`.
-- KPI operasional berbasis filter aktif: stok scope, masuk, keluar, net, event opname, dan jumlah produk dengan stok rendah.
-- Alert prioritas:
-  - Produk stok rendah teratas (berdasarkan selisih ke stok minimum).
-  - Produk tanpa aktivitas 30 hari terakhir.
-- Feed aktivitas terkini gabungan movement + transfer (deep-link ke modul terkait).
-- Insight distribusi:
-  - Top produk aktif pada periode terpilih.
-  - Ringkasan stok dan aktivitas per outlet (deep-link ke analitik laporan).
+## Route Utama Frontend
+- `/login` : login user
+- `/register` : registrasi owner + Outlet/Cabang trial
+- `/t` : picker Outlet/Cabang
+- `/t/[tenantSlug]` : aplikasi inventory Outlet/Cabang
+- `/platform` : admin monitoring platform
 
-### 2) Stok Masuk
-- Input stok masuk untuk lokasi pusat.
-- Pemilihan produk via dropdown searchable.
-- Modal konfirmasi input (jumlah, catatan, proyeksi stok akhir).
+## Environment Frontend
+Salin `.env.example` menjadi `.env.local` lalu isi:
+- `NEXT_PUBLIC_API_BASE_URL`
+- `API_BASE_URL_SERVER`
+- `AUTH_TOKEN_COOKIE`
+- `NEXT_PUBLIC_AUTH_TOKEN_COOKIE`
 
-### 3) Stok Keluar
-- Input stok keluar dari pusat atau outlet.
-- Validasi agar jumlah keluar tidak melebihi stok tersedia.
-- Mendukung favorit produk per lokasi dan prioritas produk berdasarkan frekuensi pemakaian.
+Contoh lokal saat backend Laravel berjalan di port 8000:
+```env
+NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
+API_BASE_URL_SERVER="http://localhost:8000"
+AUTH_TOKEN_COOKIE="tw_access_token"
+NEXT_PUBLIC_AUTH_TOKEN_COOKIE="tw_access_token"
+```
 
-### 4) Modul Lainnya
-- Riwayat:
-  - Daftar riwayat pergerakan stok.
-  - Filter tipe transaksi: `Masuk`, `Keluar`, `Opname`.
-  - Pagination + pilihan ukuran halaman (`5/10/20`).
-- Master:
-  - Sub-menu `Produk`, `Kategori`, dan `Satuan`.
-  - Produk:
-    - Tambah, ubah, hapus produk.
-    - SKU unik.
-    - Wajib pilih kategori dan satuan.
-    - Filter daftar produk per kategori + pagination.
-  - Kategori:
-    - Tambah, ubah, hapus kategori.
-    - Proteksi hapus jika kategori masih dipakai produk.
-  - Satuan:
-    - Tambah, ubah, hapus satuan.
-    - Proteksi hapus jika satuan masih dipakai produk.
-- Outlet:
-  - Tambah, ubah, hapus outlet.
-  - Input koordinat (latitude/longitude).
-  - Pencarian alamat via Nominatim OSM.
-  - Pemilihan titik via peta Leaflet (klik/geser marker).
-  - Proteksi hapus jika outlet masih punya stok/riwayat pergerakan/riwayat transfer.
-- Transfer:
-  - Transfer stok dari pusat ke banyak outlet sekaligus.
-  - Transfer antar outlet.
-  - Validasi tujuan duplikat, tujuan sama dengan sumber, dan stok sumber.
-  - Log transfer + pagination.
-- Opname:
-  - Input stok fisik per lokasi (pusat/outlet).
-  - Hitung selisih otomatis terhadap stok sistem.
-  - Catat event opname ke riwayat.
-- Analitik Stok:
-  - Laporan data barang per produk (stok pusat, total stok outlet, total gabungan).
-  - Filter lokasi: semua lokasi, pusat, atau outlet tertentu.
-  - Tren pergerakan stok dengan periode preset: `30 Hari`, `Bulanan (12 bulan)`, `Tahunan (5 tahun)`.
-  - Visual chart animatif yang mobile-friendly + tabel ringkasan aksesibel.
-- Ekspor Data:
-  - Ekspor snapshot stok ke format Excel (`.xlsx`).
-  - Filter lokasi: semua lokasi, pusat, atau outlet tertentu.
-  - Sheet tunggal `Stok Snapshot` dengan kolom tanggal export, lokasi, produk, SKU, kategori, satuan, dan qty.
-
-### 5) UX & UI
-- Responsive layout desktop/mobile.
-- Bottom navigation mobile + dialog modul "Lainnya".
-- Toast notifikasi sukses/error (selalu di atas header).
-- Animasi transisi panel, sheet modal, dan pulse event.
-- Input angka stok dinormalisasi agar entri seperti `0` lalu `2` menjadi `2`.
-
-## Batasan Saat Ini
-- Data masih bersifat in-memory (state React) dan seeded dari mock data.
-- Reload halaman akan mengembalikan data ke kondisi awal.
-- Belum ada backend, autentikasi, atau sinkronisasi database.
-- Belum ada fitur harga produk (hanya fokus kuantitas stok).
-- Ekspor saat ini masih fokus snapshot stok (belum termasuk riwayat transfer/movement multi-sheet).
-- Custom date range untuk analitik belum tersedia di versi ini (masuk backlog fase berikutnya).
-
-## Teknologi
-- Next.js `14.2.5`
-- React `18.3.1`
-- TypeScript
-- Tailwind CSS `3.4.7`
-
-## Menjalankan Proyek
-
-### Prasyarat
-- Node.js 18+ (disarankan Node.js 20+)
-- npm
-
-### Development
+## Setup Lokal Frontend
 ```bash
 npm install
 npm run dev
 ```
 
-Buka `http://localhost:3000`.
-
-### Build Production
-```bash
-npm run build
-npm run start
-```
-
-### Lint
-```bash
-npm run lint
-```
-
-## Struktur Folder Ringkas
-
-```text
-app/
-  layout.tsx
-  page.tsx
-  globals.css
-components/
-  InventoryApp.tsx
-  BottomNav.tsx
-  OutletMapPicker.tsx
-lib/
-  types.ts
-  mockData.ts
-```
-
-## Catatan Integrasi Eksternal
-- Peta outlet memuat Leaflet dari CDN `unpkg.com`.
-- Pencarian alamat outlet menggunakan API Nominatim OpenStreetMap.
-- Fitur peta dan geocoding membutuhkan koneksi internet saat runtime.
+## Catatan
+- Semua endpoint domain (`/api/auth/*`, `/api/tenant/*`, `/api/billing/*`, `/api/platform/*`) sekarang dipanggil langsung ke backend Laravel.
+- Repo ini tidak lagi menggunakan Supabase dan Prisma sebagai backend utama.

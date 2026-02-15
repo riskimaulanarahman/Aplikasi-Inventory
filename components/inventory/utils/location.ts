@@ -1,15 +1,36 @@
 import { LocationKey, Movement, Outlet, StockLocation } from '@/lib/types';
 import { LocationFilter } from '@/components/inventory/types';
 
-export function toLocationFilterOptions(outlets: Outlet[]) {
-  return [
-    { value: 'all' as const, label: 'Semua Lokasi' },
-    { value: 'central' as const, label: 'Pusat' },
-    ...outlets.map((outlet) => ({
-      value: `outlet:${outlet.id}` as const,
-      label: `${outlet.name} (${outlet.code})`,
-    })),
-  ];
+export function toLocationFilterOptions(
+  outlets: Outlet[],
+  membershipRole: string,
+  accessibleBranchIds: string[],
+) {
+  const options = [];
+
+  if (membershipRole !== 'staff') {
+    options.push({ value: 'all' as const, label: 'Semua Lokasi' });
+  }
+
+  const hasCentralAccess =
+    membershipRole !== 'staff' ||
+    outlets.some((o) => accessibleBranchIds.includes(o.id) && o.code === 'PST');
+
+  if (hasCentralAccess) {
+    options.push({ value: 'central' as const, label: 'Pusat' });
+  }
+
+  outlets
+    .filter((o) => o.code !== 'PST')
+    .filter((o) => membershipRole !== 'staff' || accessibleBranchIds.includes(o.id))
+    .forEach((outlet) => {
+      options.push({
+        value: `outlet:${outlet.id}` as const,
+        label: `${outlet.name} (${outlet.code})`,
+      });
+    });
+
+  return options;
 }
 
 export function getLocationFilterLabel(filter: LocationFilter, outlets: Outlet[]) {

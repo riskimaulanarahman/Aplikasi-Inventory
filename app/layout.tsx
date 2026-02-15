@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "Aplikasi Inventori Stok",
-  description: "Aplikasi manajemen stok pusat dan outlet"
+  title: 'Inventory SaaS Multi Outlet/Cabang',
+  description: 'Inventory SaaS dengan Laravel API, RBAC Outlet/Cabang, billing subscription, dan admin monitoring.',
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
