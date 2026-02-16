@@ -3945,6 +3945,59 @@ export function OutletManager({
 		};
 	}, [searchQuery]);
 
+	useEffect(() => {
+		if (
+			!editingId &&
+			typeof window !== 'undefined' &&
+			'navigator' in window &&
+			navigator.geolocation
+		) {
+			navigator.geolocation.getCurrentPosition(
+				(position) => {
+					setLatitude(position.coords.latitude);
+					setLongitude(position.coords.longitude);
+				},
+				(error) => {
+					console.error('Geolocation error:', error);
+				},
+				{ enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
+			);
+		}
+	}, [editingId]);
+
+	const handleUseCurrentLocation = () => {
+		if (
+			typeof window !== 'undefined' &&
+			'navigator' in window &&
+			navigator.geolocation
+		) {
+			setSearchLoading(true);
+			setSearchError('');
+			navigator.geolocation.getCurrentPosition(
+				(position) => {
+					setLatitude(position.coords.latitude);
+					setLongitude(position.coords.longitude);
+					setSearchLoading(false);
+				},
+				(error) => {
+					setSearchLoading(false);
+					let message = 'Gagal mendapatkan lokasi.';
+					if (error.code === error.PERMISSION_DENIED) {
+						message = 'Izin lokasi ditolak. Periksa pengaturan browser Anda.';
+					} else if (error.code === error.POSITION_UNAVAILABLE) {
+						message = 'Informasi lokasi tidak tersedia.';
+					} else if (error.code === error.TIMEOUT) {
+						message = 'Waktu permintaan lokasi habis.';
+					}
+					setSearchError(message);
+				},
+				{ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+			);
+		} else {
+			setSearchError('Browser Anda tidak mendukung fitur lokasi.');
+		}
+	};
+
 	const outletStockSummary = useMemo(() => {
 		const totalByOutletId: Record<string, number> = {};
 		const activeProductIdsByOutletId: Record<string, Set<string>> = {};
@@ -4100,12 +4153,23 @@ export function OutletManager({
 						<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
 							Cari alamat (Nominatim OSM)
 						</label>
-						<input
-							value={searchQuery}
-							onChange={(event) => setSearchQuery(event.target.value)}
-							placeholder="Ketik alamat minimal 3 karakter"
-							className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
-						/>
+						<div className="flex gap-2">
+							<input
+								value={searchQuery}
+								onChange={(event) => setSearchQuery(event.target.value)}
+								placeholder="Ketik alamat minimal 3 karakter"
+								className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+							/>
+							<button
+								type="button"
+								onClick={handleUseCurrentLocation}
+								disabled={searchLoading}
+								title="Gunakan Lokasi Saat Ini"
+								className="flex items-center justify-center rounded-lg bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50"
+							>
+								📍
+							</button>
+						</div>
 						{searchLoading ? (
 							<p className="mt-2 text-xs text-slate-500">Mencari alamat...</p>
 						) : null}

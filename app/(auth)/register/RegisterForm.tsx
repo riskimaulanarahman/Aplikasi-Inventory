@@ -67,8 +67,8 @@ export default function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid grid-cols-1 gap-5">
-        <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2">
+        <div className="space-y-2 sm:col-span-2">
           <label className="text-sm font-bold text-slate-700 ml-1">Nama Lengkap</label>
           <input 
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none" 
@@ -92,14 +92,21 @@ export default function RegisterForm() {
 
         <div className="space-y-2">
           <label className="text-sm font-bold text-slate-700 ml-1">Tipe Outlet</label>
-          <select 
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none appearance-none" 
-            value={tenantType} 
-            onChange={(event) => setTenantType(event.target.value as 'company' | 'individual')}
-          >
-            <option value="company">Perusahaan (Company)</option>
-            <option value="individual">Perorangan (Individual)</option>
-          </select>
+          <div className="relative">
+            <select 
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 outline-none appearance-none" 
+              value={tenantType} 
+              onChange={(event) => setTenantType(event.target.value as 'company' | 'individual')}
+            >
+              <option value="company">Perusahaan (Company)</option>
+              <option value="individual">Perorangan (Individual)</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -124,7 +131,7 @@ export default function RegisterForm() {
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 sm:col-span-2">
           <label className="text-sm font-bold text-slate-700 ml-1">Password</label>
           <input 
             type="password" 

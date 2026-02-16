@@ -62,11 +62,11 @@ export default async function RegisterPage() {
       </div>
 
       {/* Right Panel - Register Form */}
-      <div className="flex w-full items-center justify-center bg-gray-50 p-8 md:w-1/2 lg:p-12 h-full overflow-y-auto">
-        <div className="w-full max-w-md space-y-8 py-10">
+      <div className="flex w-full items-center justify-center bg-gray-50 px-4 py-12 sm:px-8 md:w-1/2 md:py-8 lg:p-12 h-full overflow-y-auto">
+        <div className="w-full max-w-xl space-y-8">
           <div className="text-center md:text-left">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Daftar Akun Baru</h2>
-            <p className="mt-2 text-sm text-slate-600">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Daftar Akun Baru</h2>
+            <p className="mt-2 text-sm text-slate-600 sm:text-base">
               Lengkapi informasi di bawah untuk memulai trial 30 hari Anda.
             </p>
           </div>
@@ -77,13 +77,13 @@ export default async function RegisterPage() {
 
           <p className="text-center text-sm text-slate-600">
             Sudah punya akun?{' '}
-            <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 underline decoration-indigo-600/30 underline-offset-4 hover:decoration-indigo-600">
+            <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 underline decoration-indigo-600/30 underline-offset-4 hover:decoration-indigo-600 transition-all">
               Masuk di sini
             </Link>
           </p>
 
-          <p className="px-8 text-center text-xs text-slate-500 pb-4">
-            Dengan mendaftar, Anda menyetujui <a href="#" className="underline underline-offset-4 hover:text-slate-900">Syarat & Ketentuan</a> dan <a href="#" className="underline underline-offset-4 hover:text-slate-900">Kebijakan Privasi</a> kami.
+          <p className="px-4 text-center text-xs text-slate-500 sm:px-8 lg:px-12">
+            Dengan mendaftar, Anda menyetujui <a href="#" className="underline underline-offset-4 hover:text-slate-900 transition-colors">Syarat & Ketentuan</a> dan <a href="#" className="underline underline-offset-4 hover:text-slate-900 transition-colors">Kebijakan Privasi</a> kami.
           </p>
         </div>
       </div>
