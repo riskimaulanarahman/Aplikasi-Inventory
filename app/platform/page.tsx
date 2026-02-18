@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import LogoutButton from '@/components/auth/LogoutButton';
 import { getCurrentUserSession } from '@/lib/auth/session';
 import { serverApiJson } from '@/lib/api/server';
@@ -65,7 +66,15 @@ export default async function PlatformPage() {
             </div>
             <h1 className="text-xl font-black text-slate-900 tracking-tight sm:text-2xl">Monitoring SaaS</h1>
           </div>
-          <LogoutButton />
+          <div className="flex items-center gap-4">
+            <Link 
+              href="/platform/users"
+              className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors"
+            >
+              User Management
+            </Link>
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

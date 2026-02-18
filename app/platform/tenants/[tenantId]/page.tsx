@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentUserSession } from '@/lib/auth/session';
 import { serverApiJson } from '@/lib/api/server';
+import TenantSettings from '@/components/platform/TenantSettings';
 
 interface TenantDetail {
   tenant: {
@@ -24,6 +25,7 @@ interface TenantDetail {
     period_end_at: string;
     trial_start_at: string | null;
     trial_end_at: string | null;
+    read_only_mode: boolean;
   } | null;
   branches: Array<{
     id: string;
@@ -267,6 +269,13 @@ export default async function TenantDetailPage({ params }: { params: { tenantId:
             )}
           </div>
         </section>
+
+        {/* Manual Settings */}
+        <TenantSettings
+          tenantId={tenant.id}
+          initialTenantStatus={tenant.status as 'active' | 'suspended'}
+          initialSubscription={subscription}
+        />
       </main>
     </div>
   );
